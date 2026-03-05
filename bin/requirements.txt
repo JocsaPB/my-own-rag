@@ -1,0 +1,14 @@
+# Cliente HTTP do ChromaDB (conecta ao servidor Docker)
+chromadb>=0.5.0
+
+# Modelo de embeddings local rodando na CPU
+sentence-transformers>=3.0.0
+
+# Splitter de texto para chunking inteligente
+langchain-text-splitters>=0.2.0
+
+# Barra de progresso visual no terminal
+tqdm>=4.66.0
+
+# SDK oficial do MCP (Model Context Protocol) da Anthropic
+mcp>=1.0.0
