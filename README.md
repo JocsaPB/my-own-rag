@@ -1,16 +1,16 @@
-# RAG Local para Codebase — MCP Server
+# Local RAG for Codebase — MCP Server
 
-RAG local com ChromaDB (Docker) + embeddings `all-MiniLM-L6-v2` (CPU) integrado ao Claude Code CLI via MCP.
+Local RAG with ChromaDB (Docker) + `all-MiniLM-L6-v2` embeddings (CPU) integrated into Claude Code CLI via MCP.
 
-## Estrutura
+## Structure
 
 ```
 my-custom-rag-python/
-├── rag-setup.run       # instalador auto-suficiente (copie para qualquer projeto)
-├── chroma_monitor.sh   # monitor do banco em tempo real
+├── rag-setup.run       # self-contained installer (copy to any project)
+├── chroma_monitor.sh   # real-time database monitor
 ├── README.md
-└── bin/                # fontes e scripts de suporte
-    ├── build_run.sh    # reconstrói o rag-setup.run
+└── bin/                # source files and support scripts
+    ├── build_run.sh    # rebuilds rag-setup.run
     ├── docker-compose.yml
     ├── indexer_full.py
     ├── init.sh
@@ -18,34 +18,34 @@ my-custom-rag-python/
     └── requirements.txt
 ```
 
-## Uso rápido
+## Quick start
 
-Copie o `rag-setup.run` para o projeto que quer indexar e execute:
+Copy `rag-setup.run` to the project you want to index and run:
 
 ```bash
-./rag-setup.run [caminho/do/projeto] [flags]
+./rag-setup.run [path/to/project] [flags]
 ```
 
-| Flag | O que faz |
+| Flag | What it does |
 |---|---|
-| *(sem flags)* | instala tudo + indexa o diretório atual |
-| `/caminho/projeto` | instala tudo + indexa o caminho informado |
-| `--skip-index` | instala a infra sem indexar |
-| `--only-index` | só indexa (infra já instalada) |
-| `--reinstall` | força reinstalação completa |
+| *(no flags)* | installs everything + indexes current directory |
+| `/path/to/project` | installs everything + indexes the specified path |
+| `--skip-index` | installs infrastructure without indexing |
+| `--only-index` | indexes only (infrastructure already installed) |
+| `--reinstall` | forces complete reinstallation |
 
-O instalador é idempotente: detecta o que já está instalado e pula.
+The installer is idempotent: it detects what is already installed and skips it.
 
-## O que o setup faz
+## What the setup does
 
-1. Cria venv em `~/.rag_venv` e instala as dependências Python
-2. Levanta o ChromaDB via Docker (`restart: always` — sobe com o SO)
-3. Instala o `mcp-rag-server` em `~/.local/bin/` com shebang do venv
-4. Indexa o projeto com barra de progresso
+1. Creates venv at `~/.rag_venv` and installs Python dependencies
+2. Starts ChromaDB via Docker (`restart: always` — starts with the OS)
+3. Installs `mcp-rag-server` in `~/.local/bin/` with venv shebang
+4. Indexes the project with progress bar
 
-## Configuração do Claude Code
+## Claude Code configuration
 
-Adicione em `~/.claude.json` dentro de `"mcpServers"`:
+Add to `~/.claude.json` inside `"mcpServers"`:
 
 ```json
 "rag-codebase": {
@@ -58,31 +58,31 @@ Adicione em `~/.claude.json` dentro de `"mcpServers"`:
 }
 ```
 
-Reinicie o Claude Code CLI para carregar o servidor.
+Restart Claude Code CLI to load the server.
 
-## Ferramentas MCP disponíveis
+## Available MCP tools
 
-| Ferramenta | Descrição |
+| Tool | Description |
 |---|---|
-| `semantic_search_code` | busca semântica na codebase indexada |
-| `update_file_index` | reindexa um arquivo após edição |
-| `delete_file_index` | remove um arquivo do índice |
-| `index_specific_folder` | indexa uma subpasta sob demanda |
+| `semantic_search_code` | semantic search in the indexed codebase |
+| `update_file_index` | re-indexes a file after editing |
+| `delete_file_index` | removes a file from the index |
+| `index_specific_folder` | indexes a subfolder on demand |
 
-## Monitor do banco
+## Database monitor
 
 ```bash
-./chroma_monitor.sh           # menu interativo
-./chroma_monitor.sh chunks    # contagem de chunks (snapshot)
-./chroma_monitor.sh watch     # chunks em tempo real
-./chroma_monitor.sh disk      # tamanho no disco
-./chroma_monitor.sh logs      # logs HTTP do container
-./chroma_monitor.sh full      # painel completo
+./chroma_monitor.sh           # interactive menu
+./chroma_monitor.sh chunks    # chunk count (snapshot)
+./chroma_monitor.sh watch     # real-time chunks
+./chroma_monitor.sh disk      # disk size
+./chroma_monitor.sh logs      # HTTP logs from container
+./chroma_monitor.sh full      # full dashboard
 ```
 
-## Reconstruir o instalador
+## Rebuild the installer
 
-Se editar arquivos em `bin/`, regenere o `rag-setup.run`:
+If you edit files in `bin/`, regenerate `rag-setup.run`:
 
 ```bash
 ./bin/build_run.sh
