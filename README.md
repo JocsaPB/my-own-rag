@@ -1,6 +1,6 @@
 # Local RAG for Codebase — MCP Server
 
-Local RAG with ChromaDB (Docker) + `all-MiniLM-L6-v2` embeddings (CPU) integrated into Claude Code CLI via MCP.
+Local RAG with ChromaDB (Docker) + `all-MiniLM-L6-v2` embeddings (CPU) integrated into Claude Code CLI via MCP. (link para .md em PT-BR: https://github.com/JocsaPB/my-won-rag/blob/dee053edc0dc4a10e3aa5c05fb83a5819a174944/README.md)
 
 ## Structure
 
