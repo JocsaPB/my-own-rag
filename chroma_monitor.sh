@@ -11,6 +11,7 @@
 #   ./chroma_monitor.sh mcp-logs # logs de uso das ferramentas MCP
 #   ./chroma_monitor.sh mcp-summary # resumo agregado de uso MCP (24h + geral)
 #   ./chroma_monitor.sh full     # painel completo: chunks + disco + detalhes
+#   ./chroma_monitor.sh reset    # zera o ChromaDB (remove todas as coleções)
 # =============================================================================
 set -euo pipefail
 
@@ -520,6 +521,54 @@ PYEOF
 }
 
 # ---------------------------------------------------------------------------
+# Modo 8: reset — remove todas as coleções do ChromaDB
+# ---------------------------------------------------------------------------
+cmd_reset() {
+    ensure_venv
+
+    echo ""
+    echo -e "${RED}${BOLD}[ATENÇÃO]${NC} Esta ação vai apagar ${BOLD}todas${NC} as coleções e chunks do ChromaDB."
+    echo -e "${YELLOW}Essa operação é irreversível.${NC}"
+    echo ""
+
+    read -rp "Deseja continuar? [s/N]: " confirm_reset
+    confirm_reset="$(echo "${confirm_reset:-}" | tr '[:upper:]' '[:lower:]')"
+    if [[ "$confirm_reset" != "s" && "$confirm_reset" != "sim" && "$confirm_reset" != "y" && "$confirm_reset" != "yes" ]]; then
+        log_info "Reset cancelado."
+        exit 0
+    fi
+
+    read -rp "Digite ZERAR para confirmar: " final_confirmation
+    if [[ "${final_confirmation:-}" != "ZERAR" ]]; then
+        log_info "Reset cancelado."
+        exit 0
+    fi
+
+    "${VENV_PYTHON}" - << 'PYEOF'
+import sys
+import chromadb
+
+CHROMA_HOST = "localhost"
+CHROMA_PORT = 8000
+
+try:
+    client = chromadb.HttpClient(host=CHROMA_HOST, port=CHROMA_PORT)
+    client.heartbeat()
+except Exception as e:
+    print(f"[ERRO] Não foi possível conectar ao ChromaDB em {CHROMA_HOST}:{CHROMA_PORT}: {e}")
+    sys.exit(1)
+
+collections = client.list_collections()
+removed = 0
+for col in collections:
+    client.delete_collection(name=col.name)
+    removed += 1
+
+print(f"[+] Reset concluído. Coleções removidas: {removed}")
+PYEOF
+}
+
+# ---------------------------------------------------------------------------
 # Menu interativo
 # ---------------------------------------------------------------------------
 cmd_menu() {
@@ -542,6 +591,7 @@ cmd_menu() {
     echo -e "  ${CYAN}[5]${NC} Ver logs de uso MCP            ${DIM}(quem acessa + ferramenta usada)${NC}"
     echo -e "  ${CYAN}[6]${NC} Resumo de uso MCP              ${DIM}(top ferramentas/atores e 24h)${NC}"
     echo -e "  ${CYAN}[7]${NC} Painel completo                ${DIM}(tudo junto, atualiza automático)${NC}"
+    echo -e "  ${CYAN}[8]${NC} Zerar ChromaDB                 ${DIM}(apaga todas as coleções)${NC}"
     echo ""
     echo -e "  ${CYAN}[0]${NC} Sair"
     echo ""
@@ -555,6 +605,7 @@ cmd_menu() {
         5) cmd_mcp_logs ;;
         6) cmd_mcp_summary ;;
         7) cmd_full ;;
+        8) cmd_reset ;;
         0) exit 0 ;;
         *) echo -e "\n  ${YELLOW}Opção inválida.${NC}"; sleep 1; cmd_menu ;;
     esac
@@ -571,10 +622,11 @@ case "${1:-menu}" in
     mcp-logs) cmd_mcp_logs ;;
     mcp-summary) cmd_mcp_summary ;;
     full)    cmd_full   ;;
+    reset)   cmd_reset  ;;
     menu)    cmd_menu   ;;
     *)
         echo -e "${RED}[ERRO]${NC} Modo desconhecido: '$1'"
-        echo "Uso: $0 [chunks|watch|disk|logs|mcp-logs|mcp-summary|full]"
+        echo "Uso: $0 [chunks|watch|disk|logs|mcp-logs|mcp-summary|full|reset]"
         exit 1
         ;;
 esac

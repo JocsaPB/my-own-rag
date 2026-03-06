@@ -43,6 +43,8 @@ DOCKER_COMPOSE_DIR="${USER_HOME}/docker-chromadb"
 RAG_DB_DIR="${USER_HOME}/.rag_db"
 BIN_DIR="${USER_HOME}/.local/bin"
 MCP_SERVER_DEST="${BIN_DIR}/mcp-rag-server"
+MODEL_DL_HF_DEST="${BIN_DIR}/download_model_from_hugginface.py"
+MODEL_DL_MS_DEST="${BIN_DIR}/download_model_from_modelscope.py"
 
 # ---------------------------------------------------------------------------
 # Passo 0: Verificação de pré-requisitos
@@ -162,19 +164,33 @@ cd "$SCRIPT_DIR"
 log_section "Instalando mcp-rag-server globalmente"
 
 MCP_SERVER_SRC="${SCRIPT_DIR}/mcp_server.py"
+MODEL_DL_HF_SRC="${SCRIPT_DIR}/download_model_from_hugginface.py"
+MODEL_DL_MS_SRC="${SCRIPT_DIR}/download_model_from_modelscope.py"
 if [[ ! -f "$MCP_SERVER_SRC" ]]; then
     log_error "mcp_server.py não encontrado em: $MCP_SERVER_SRC"
+    exit 1
+fi
+if [[ ! -f "$MODEL_DL_HF_SRC" ]]; then
+    log_error "download_model_from_hugginface.py não encontrado em: $MODEL_DL_HF_SRC"
+    exit 1
+fi
+if [[ ! -f "$MODEL_DL_MS_SRC" ]]; then
+    log_error "download_model_from_modelscope.py não encontrado em: $MODEL_DL_MS_SRC"
     exit 1
 fi
 
 mkdir -p "$BIN_DIR"
 cp "$MCP_SERVER_SRC" "$MCP_SERVER_DEST"
+cp "$MODEL_DL_HF_SRC" "$MODEL_DL_HF_DEST"
+cp "$MODEL_DL_MS_SRC" "$MODEL_DL_MS_DEST"
 
 # Shebang aponta para o python do venv (tem todas as dependências)
 sed -i "1s|.*|#!${VENV_PYTHON}|" "$MCP_SERVER_DEST"
 chmod +x "$MCP_SERVER_DEST"
 
 log_info "mcp-rag-server instalado em: $MCP_SERVER_DEST"
+log_info "Módulo de download instalado em: $MODEL_DL_HF_DEST"
+log_info "Módulo de provider opcional instalado em: $MODEL_DL_MS_DEST"
 log_info "Shebang configurado para: ${VENV_PYTHON}"
 
 # Garante ~/.local/bin no PATH permanente

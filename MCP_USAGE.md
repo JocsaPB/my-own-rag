@@ -246,7 +246,7 @@ Todas as configurações são definidas em `~/.rag_venv/bin/mcp_server.py`:
 ```python
 CHUNK_SIZE = 2400        # Caracteres por chunk (~600 tokens)
 CHUNK_OVERLAP = 400      # Sobreposição entre chunks
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"  # Modelo de embeddings
+EMBEDDING_MODEL = "jinaai/jina-embeddings-v3"  # Modelo de embeddings
 TOP_K_RESULTS = 7        # Resultados padrão por busca
 MAX_FILE_SIZE = 500KB    # Limite de tamanho de arquivo
 ```

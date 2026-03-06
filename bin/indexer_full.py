@@ -13,12 +13,27 @@ import os
 import sys
 import hashlib
 import argparse
+import shutil
+import logging
 from pathlib import Path
+
+# Evita avisos "advisory" ruidosos do transformers no fluxo interativo.
+os.environ.setdefault("TRANSFORMERS_NO_ADVISORY_WARNINGS", "1")
+
+
+class _TorchDtypeWarningFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "`torch_dtype` is deprecated! Use `dtype` instead!" not in record.getMessage()
+
+
+for _logger_name in ("transformers.configuration_utils", "transformers.modeling_utils"):
+    logging.getLogger(_logger_name).addFilter(_TorchDtypeWarningFilter())
 
 import chromadb
 from sentence_transformers import SentenceTransformer
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from tqdm import tqdm
+from download_model_from_hugginface import download_model_with_fallback
 
 # ---------------------------------------------------------------------------
 # Configurações globais
@@ -58,13 +73,115 @@ IGNORED_EXTENSIONS = {
 MAX_FILE_SIZE_BYTES = 500 * 1024  # 500 KB
 
 # Parâmetros do splitter (aproximação de tokens via caracteres)
-# Jina Code V2 suporta até 8192 tokens — ~6000 chars ≈ 1500 tokens (4 chars/token)
+# Jina Embeddings V3 suporta janelas longas — ~6000 chars ≈ 1500 tokens (4 chars/token)
 CHUNK_SIZE = 6000
 CHUNK_OVERLAP = 800
 
 # Modelo de embeddings (roda na CPU)
-# BGE-M3: multilingual, 1024D, 8192 token context, state-of-the-art no MTEB
-EMBEDDING_MODEL = "BAAI/bge-m3"
+JINA_EMBEDDING_MODEL = "jinaai/jina-embeddings-v3"
+BGE_EMBEDDING_MODEL = "BAAI/bge-m3"
+DEFAULT_EMBEDDING_MODEL_CHOICE = "jina"
+DEFAULT_JINA_QUANTIZATION = "default"
+MODEL_CACHE_BASE_DIR = Path(
+    os.environ.get("MCP_MODEL_DIR", str(Path.home() / ".cache" / "my-custom-rag-python" / "models"))
+).expanduser()
+
+
+def _resolve_model_id(model_choice: str) -> str:
+    return JINA_EMBEDDING_MODEL if model_choice == "jina" else BGE_EMBEDDING_MODEL
+
+
+def _resolve_fallback_model_id(model_choice: str) -> str:
+    return BGE_EMBEDDING_MODEL if model_choice == "jina" else BGE_EMBEDDING_MODEL
+
+
+def _model_cache_dir(base_dir: Path, model_id: str) -> Path:
+    safe_name = model_id.replace("/", "__").replace(":", "_")
+    return base_dir / safe_name
+
+
+def _pick_with_prompt(
+    *,
+    current_value: str | None,
+    default_value: str,
+    title: str,
+    options: list[tuple[str, str]],
+) -> str:
+    if current_value:
+        return current_value
+    if not sys.stdin.isatty():
+        return default_value
+
+    print(f"\n[CONFIG] {title}")
+    for index, (_, description) in enumerate(options, start=1):
+        print(f"  {index}) {description}")
+    print(f"  Enter = padrão ({default_value})")
+
+    answer = input("> Escolha: ").strip()
+    if not answer:
+        return default_value
+    if answer.isdigit():
+        idx = int(answer) - 1
+        if 0 <= idx < len(options):
+            return options[idx][0]
+    lowered = answer.lower()
+    valid_keys = {k for k, _ in options}
+    if lowered in valid_keys:
+        return lowered
+    print(f"[AVISO] Opção inválida '{answer}'. Usando padrão: {default_value}")
+    return default_value
+
+
+def resolve_embedding_config(
+    model_choice_arg: str | None,
+    jina_quantization_arg: str | None,
+) -> tuple[str, str]:
+    model_choice = model_choice_arg or os.environ.get("MCP_EMBEDDING_MODEL")
+    if model_choice:
+        model_choice = model_choice.strip().lower()
+    model_choice = _pick_with_prompt(
+        current_value=model_choice,
+        default_value=DEFAULT_EMBEDDING_MODEL_CHOICE,
+        title="Escolha do modelo de embeddings",
+        options=[
+            (
+                "jina",
+                f"jina ({JINA_EMBEDDING_MODEL}) - melhor performance em projetos majoritariamente de codigo.",
+            ),
+            (
+                "bge",
+                f"bge ({BGE_EMBEDDING_MODEL}) - melhor para conteudo misto (codigo + documentacao).",
+            ),
+        ],
+    )
+    if model_choice not in {"jina", "bge"}:
+        print(f"[AVISO] MCP_EMBEDDING_MODEL inválido '{model_choice}'. Usando '{DEFAULT_EMBEDDING_MODEL_CHOICE}'.")
+        model_choice = DEFAULT_EMBEDDING_MODEL_CHOICE
+
+    jina_quantization = jina_quantization_arg or os.environ.get("MCP_JINA_QUANTIZATION")
+    if jina_quantization:
+        jina_quantization = jina_quantization.strip().lower().replace("_", "-")
+
+    if model_choice == "jina":
+        jina_quantization = _pick_with_prompt(
+            current_value=jina_quantization,
+            default_value=DEFAULT_JINA_QUANTIZATION,
+            title="Quantizacao do Jina (apenas para CPU)",
+            options=[
+                ("default", "default (sem quantizacao) - maior qualidade, indexacao mais lenta."),
+                ("dynamic-int8", "dynamic-int8 - indexacao mais rapida e menor uso de RAM, com pequena perda de qualidade."),
+            ],
+        )
+        if jina_quantization not in {"default", "dynamic-int8"}:
+            print(
+                f"[AVISO] MCP_JINA_QUANTIZATION inválido '{jina_quantization}'. "
+                f"Usando '{DEFAULT_JINA_QUANTIZATION}'."
+            )
+            jina_quantization = DEFAULT_JINA_QUANTIZATION
+    else:
+        jina_quantization = "default"
+
+    return model_choice, jina_quantization
 
 
 # ---------------------------------------------------------------------------
@@ -81,12 +198,171 @@ def get_text_splitter() -> RecursiveCharacterTextSplitter:
     )
 
 
-def load_embedding_model() -> SentenceTransformer:
+def load_embedding_model(model_choice: str, jina_quantization: str) -> SentenceTransformer:
     """Carrega o modelo de embeddings forçando uso de CPU."""
-    print(f"[+] Carregando modelo de embeddings: {EMBEDDING_MODEL} (CPU)...")
-    model = SentenceTransformer(EMBEDDING_MODEL, device="cpu")
-    print("[+] Modelo carregado com sucesso.")
-    return model
+    embedding_model_id = _resolve_model_id(model_choice)
+    fallback_model_id = _resolve_fallback_model_id(model_choice)
+
+    model_base_dir = MODEL_CACHE_BASE_DIR
+    model_base_dir.mkdir(parents=True, exist_ok=True)
+    preferred_model_cache_dir = _model_cache_dir(model_base_dir, embedding_model_id)
+
+    print(f"[+] Baixando modelo preferido: {embedding_model_id}")
+    print(f"[+] Diretório de download/cache do modelo: {preferred_model_cache_dir}")
+    selection = download_model_with_fallback(
+        preferred_model_id=embedding_model_id,
+        fallback_model_id=fallback_model_id,
+        local_dir=model_base_dir,
+    )
+    selected_model_dir = selection.local_dir
+    print(
+        f"[+] Modelo selecionado: {selection.model_id} "
+        f"(provider={selection.provider}, path={selected_model_dir})"
+    )
+
+    def _clear_hf_dynamic_modules_cache() -> None:
+        cache_dir = Path.home() / ".cache" / "huggingface" / "modules" / "transformers_modules"
+        if cache_dir.exists():
+            print(f"[!] Limpando cache de módulos dinâmicos do Hugging Face: {cache_dir}")
+            shutil.rmtree(cache_dir, ignore_errors=True)
+
+    def _load_from_local_dir(model_id: str) -> SentenceTransformer:
+        # O modelo da Jina depende de código remoto; fallback normalmente não.
+        trust_remote_code = model_id.startswith("jinaai/")
+        tokenizer_kwargs = {"fix_mistral_regex": True}
+
+        def _instantiate_model() -> SentenceTransformer:
+            return SentenceTransformer(
+                str(selected_model_dir),
+                device="cpu",
+                trust_remote_code=trust_remote_code,
+                tokenizer_kwargs=tokenizer_kwargs,
+            )
+
+        def _load_with_mistral_regex_patch() -> SentenceTransformer:
+            # O código remoto da Jina instancia um tokenizer interno sem repassar tokenizer_kwargs.
+            if not trust_remote_code:
+                return _instantiate_model()
+
+            from transformers import AutoModel, AutoTokenizer
+            from transformers.modeling_utils import PreTrainedModel
+
+            original_from_pretrained = AutoTokenizer.from_pretrained
+            original_model_from_pretrained = AutoModel.from_pretrained
+            original_pretrained_model_from_pretrained = PreTrainedModel.from_pretrained
+            original_pretrained_model_from_config = PreTrainedModel._from_config
+            model_refs = {str(selected_model_dir), str(selected_model_dir.resolve())}
+
+            def _patched_from_pretrained(*args, **kwargs):
+                model_ref = args[0] if args else kwargs.get("pretrained_model_name_or_path")
+                if model_ref is not None and str(model_ref) in model_refs:
+                    kwargs.setdefault("fix_mistral_regex", True)
+                return original_from_pretrained(*args, **kwargs)
+
+            def _patched_model_from_pretrained(*args, **kwargs):
+                model_ref = args[0] if args else kwargs.get("pretrained_model_name_or_path")
+                if model_ref is not None and str(model_ref) in model_refs and "torch_dtype" in kwargs:
+                    kwargs = dict(kwargs)
+                    if "dtype" not in kwargs:
+                        kwargs["dtype"] = kwargs["torch_dtype"]
+                    kwargs.pop("torch_dtype", None)
+                return original_model_from_pretrained(*args, **kwargs)
+
+            original_pretrained_model_from_pretrained_fn = original_pretrained_model_from_pretrained.__func__
+
+            @classmethod
+            def _patched_pretrained_model_from_pretrained(cls, *args, **kwargs):
+                if "torch_dtype" in kwargs:
+                    kwargs = dict(kwargs)
+                    if "dtype" not in kwargs:
+                        kwargs["dtype"] = kwargs["torch_dtype"]
+                    kwargs.pop("torch_dtype", None)
+                return original_pretrained_model_from_pretrained_fn(cls, *args, **kwargs)
+
+            original_pretrained_model_from_config_fn = original_pretrained_model_from_config.__func__
+
+            @classmethod
+            def _patched_pretrained_model_from_config(cls, *args, **kwargs):
+                if "torch_dtype" in kwargs:
+                    kwargs = dict(kwargs)
+                    if "dtype" not in kwargs:
+                        kwargs["dtype"] = kwargs["torch_dtype"]
+                    kwargs.pop("torch_dtype", None)
+                return original_pretrained_model_from_config_fn(cls, *args, **kwargs)
+
+            AutoTokenizer.from_pretrained = _patched_from_pretrained
+            AutoModel.from_pretrained = _patched_model_from_pretrained
+            PreTrainedModel.from_pretrained = _patched_pretrained_model_from_pretrained
+            PreTrainedModel._from_config = _patched_pretrained_model_from_config
+            try:
+                return _instantiate_model()
+            finally:
+                AutoTokenizer.from_pretrained = original_from_pretrained
+                AutoModel.from_pretrained = original_model_from_pretrained
+                PreTrainedModel.from_pretrained = original_pretrained_model_from_pretrained
+                PreTrainedModel._from_config = original_pretrained_model_from_config
+
+        print(f"[+] Carregando modelo de embeddings a partir de: {selected_model_dir} (CPU)...")
+        try:
+            return _load_with_mistral_regex_patch()
+        except FileNotFoundError as e:
+            # Corrige corrupção/incompletude no cache dinâmico do transformers.
+            if trust_remote_code and "transformers_modules" in str(e):
+                print(f"[!] Cache dinâmico inconsistente detectado: {e}")
+                _clear_hf_dynamic_modules_cache()
+                return _load_with_mistral_regex_patch()
+            raise
+
+    def _apply_jina_quantization_if_needed(model: SentenceTransformer, model_id: str) -> SentenceTransformer:
+        if model_id != JINA_EMBEDDING_MODEL or jina_quantization == "default":
+            return model
+        try:
+            import torch
+
+            for module in model.modules():
+                if hasattr(module, "auto_model"):
+                    module.auto_model = torch.quantization.quantize_dynamic(
+                        module.auto_model,
+                        {torch.nn.Linear},
+                        dtype=torch.qint8,
+                    )
+                    print("[+] Quantizacao Jina aplicada: dynamic-int8 (CPU).")
+                    return model
+            print("[AVISO] Nao foi possivel localizar auto_model para aplicar dynamic-int8; usando modelo padrao.")
+            return model
+        except Exception as quant_error:
+            print(f"[AVISO] Falha ao aplicar dynamic-int8 ({quant_error}); usando modelo padrao.")
+            return model
+
+    try:
+        model = _load_from_local_dir(selection.model_id)
+        model = _apply_jina_quantization_if_needed(model, selection.model_id)
+        print("[+] Modelo carregado com sucesso.")
+        return model
+    except Exception as first_error:
+        if selection.model_id == fallback_model_id:
+            raise RuntimeError(
+                f"Falha ao carregar o modelo fallback '{fallback_model_id}': {first_error}"
+            ) from first_error
+
+        print(
+            f"[!] Falha ao carregar '{selection.model_id}': {first_error}\n"
+            f"    Tentando fallback de carregamento: {fallback_model_id}"
+        )
+        fallback_selection = download_model_with_fallback(
+            preferred_model_id=fallback_model_id,
+            fallback_model_id=fallback_model_id,
+            local_dir=model_base_dir,
+        )
+        selected_model_dir = fallback_selection.local_dir
+        print(
+            f"[+] Modelo selecionado: {fallback_selection.model_id} "
+            f"(provider={fallback_selection.provider}, path={selected_model_dir})"
+        )
+        model = _load_from_local_dir(fallback_selection.model_id)
+        model = _apply_jina_quantization_if_needed(model, fallback_selection.model_id)
+        print("[+] Modelo fallback carregado com sucesso.")
+        return model
 
 
 def connect_to_chroma() -> chromadb.HttpClient:
@@ -237,6 +513,16 @@ def main():
         action="store_true",
         help="Limpa toda a coleção antes de reindexar",
     )
+    parser.add_argument(
+        "--embedding-model",
+        choices=["jina", "bge"],
+        help="Modelo de embeddings: 'jina' (codigo) ou 'bge' (conteudo misto).",
+    )
+    parser.add_argument(
+        "--jina-quantization",
+        choices=["default", "dynamic-int8"],
+        help="Quantizacao para Jina: 'default' (mais qualidade) ou 'dynamic-int8' (mais velocidade).",
+    )
     args = parser.parse_args()
 
     root_path = Path(args.project_path).resolve()
@@ -248,9 +534,22 @@ def main():
     print(f"  RAG Indexer — Projeto: {root_path}")
     print(f"{'='*60}\n")
 
+    model_choice, jina_quantization = resolve_embedding_config(
+        args.embedding_model,
+        args.jina_quantization,
+    )
+    print(
+        f"[CONFIG] Modelo escolhido: {model_choice} "
+        f"({_resolve_model_id(model_choice)})"
+    )
+    if model_choice == "jina":
+        print(f"[CONFIG] Quantizacao Jina: {jina_quantization}")
+    else:
+        print("[CONFIG] Quantizacao Jina: nao aplicavel (modelo BGE selecionado)")
+
     # Inicializa componentes
     client = connect_to_chroma()
-    model = load_embedding_model()
+    model = load_embedding_model(model_choice, jina_quantization)
     splitter = get_text_splitter()
 
     # Obtém ou cria a coleção

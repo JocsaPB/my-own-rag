@@ -3,6 +3,8 @@ chromadb>=0.5.0
 
 # Modelo de embeddings local rodando na CPU
 sentence-transformers>=3.0.0
+# Evita incompatibilidades conhecidas do Jina v3 com APIs novas do transformers 5.x
+transformers<5
 
 # Splitter de texto para chunking inteligente
 langchain-text-splitters>=0.2.0
