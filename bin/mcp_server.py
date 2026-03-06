@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 mcp_server.py — Servidor MCP para RAG local de codebase.
 
@@ -37,11 +38,12 @@ log = logging.getLogger(__name__)
 CHROMA_HOST = os.environ.get("CHROMA_HOST", "localhost")
 CHROMA_PORT = int(os.environ.get("CHROMA_PORT", "8000"))
 COLLECTION_NAME = "codebase"
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+EMBEDDING_MODEL = "BAAI/bge-m3"
 
 # Parâmetros do splitter (idênticos ao indexer_full.py)
-CHUNK_SIZE = 2400
-CHUNK_OVERLAP = 400
+# BGE-M3 suporta até 8192 tokens — chunks maiores preservam funções inteiras
+CHUNK_SIZE = 6000
+CHUNK_OVERLAP = 800
 
 # Pastas e extensões ignoradas durante indexação de pasta/arquivo
 IGNORED_DIRS = {

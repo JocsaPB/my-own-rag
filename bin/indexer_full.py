@@ -58,12 +58,13 @@ IGNORED_EXTENSIONS = {
 MAX_FILE_SIZE_BYTES = 500 * 1024  # 500 KB
 
 # Parâmetros do splitter (aproximação de tokens via caracteres)
-# ~600 tokens ≈ 2400 chars (média de 4 chars/token)
-CHUNK_SIZE = 2400
-CHUNK_OVERLAP = 400
+# Jina Code V2 suporta até 8192 tokens — ~6000 chars ≈ 1500 tokens (4 chars/token)
+CHUNK_SIZE = 6000
+CHUNK_OVERLAP = 800
 
 # Modelo de embeddings (roda na CPU)
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+# BGE-M3: multilingual, 1024D, 8192 token context, state-of-the-art no MTEB
+EMBEDDING_MODEL = "BAAI/bge-m3"
 
 
 # ---------------------------------------------------------------------------
