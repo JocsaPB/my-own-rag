@@ -321,19 +321,49 @@ def get_model() -> SentenceTransformer:
                 return model
             try:
                 import torch
+                import warnings
 
+                quantized_layers = 0
                 for module in model.modules():
-                    if hasattr(module, "auto_model"):
-                        module.auto_model = torch.quantization.quantize_dynamic(
-                            module.auto_model,
+                    if type(module).__name__ != "ParametrizedLinear":
+                        continue
+
+                    float_linear = torch.nn.Linear(
+                        module.in_features,
+                        module.out_features,
+                        bias=module.bias is not None,
+                    )
+                    with torch.no_grad():
+                        float_linear.weight.copy_(module.weight.detach().to(torch.float32))
+                        if module.bias is not None:
+                            float_linear.bias.copy_(module.bias.detach().to(torch.float32))
+
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings("ignore", category=DeprecationWarning)
+                        quantized_linear = torch.quantization.quantize_dynamic(
+                            torch.nn.Sequential(float_linear),
                             {torch.nn.Linear},
                             dtype=torch.qint8,
-                        )
-                        log.info("Quantizacao Jina aplicada: dynamic-int8 (CPU).")
-                        return model
-                log.warning(
-                    "Nao foi possivel localizar auto_model para aplicar dynamic-int8; usando modelo padrao."
-                )
+                        )[0]
+
+                    module._dynamic_int8_linear = quantized_linear
+
+                    def _forward_dynamic_int8(self, input, task_id=None, residual=False):
+                        out = self._dynamic_int8_linear(input)
+                        if residual:
+                            return out, input
+                        return out
+
+                    module.forward = _forward_dynamic_int8.__get__(module, module.__class__)
+                    quantized_layers += 1
+
+                if quantized_layers == 0:
+                    log.warning(
+                        "Nenhuma camada ParametrizedLinear encontrada para dynamic-int8; usando modelo padrao."
+                    )
+                    return model
+
+                log.info("Quantizacao Jina aplicada: dynamic-int8 (CPU, %s camadas).", quantized_layers)
                 return model
             except Exception as quant_error:
                 log.warning("Falha ao aplicar dynamic-int8 (%s); usando modelo padrao.", quant_error)

@@ -1,4 +1,4 @@
-# MCP binary checksum (SHA-256, payload without shebang): `ea30fb3af9e79b7f98fb12e445a5da0d6d4761b6f50215db775b6a3c3765af95` | Verify: `tail -n +2 ~/.local/bin/mcp-rag-server | sha256sum`
+# MCP binary checksum (SHA-256, payload without shebang): `93beb6f3bbf074d5478d9bc99aa3400f8005dbff111d2415b58c6a9c45365c67` | Verify: `tail -n +2 ~/.local/bin/mcp-rag-server | sha256sum`
 
 # Local RAG for Codebase — MCP Server
 
