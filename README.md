@@ -1,4 +1,4 @@
-# MCP binary checksum (SHA-256, payload without shebang): `93beb6f3bbf074d5478d9bc99aa3400f8005dbff111d2415b58c6a9c45365c67` | Verify: `tail -n +2 ~/.local/bin/mcp-rag-server | sha256sum`
+# MCP binary checksum (SHA-256, payload without shebang): `3246eeb57f901742d915e0bce37fa96f059e149a57bbce73095ff4e5ea51d8d4` | Verify: `tail -n +2 ~/.local/bin/mcp-rag-server | sha256sum`
 
 # Local RAG for Codebase — MCP Server
 
@@ -30,6 +30,12 @@ Copy `rag-setup.run` to the project you want to index and run:
 ./rag-setup.run [path/to/project] [flags]
 ```
 
+For macOS (Ventura/Sonoma/Sequoia), use the dedicated installer:
+
+```bash
+./rag-setup-macos.run [path/to/project] [flags]
+```
+
 | Flag | What it does |
 |---|---|
 | *(no flags)* | installs everything + indexes current directory |
@@ -37,13 +43,28 @@ Copy `rag-setup.run` to the project you want to index and run:
 | `--skip-index` | installs infrastructure without indexing |
 | `--only-index` | indexes only (infrastructure already installed) |
 | `--reinstall` | forces complete reinstallation |
-| `--chage-model` or `-cg` | resets the environment and runs a fresh setup to switch embedding model |
+| `--change-model` or `-cm` | asks confirmation, resets ChromaDB, and runs setup again to switch embedding model |
 
 The installer is idempotent and now always asks about MCP refresh in interactive mode.
 - If `mcp-rag-server` already exists, setup checks whether it is up to date.
 - On every run, setup asks if you want to reinstall/update `mcp-rag-server`.
 - Setup preserves the current MCP version configured in your client and does not auto-increment it during `.run` execution.
 - If HF token is present but invalid, setup/download flow allows entering a new token or continuing without token.
+- The selected indexing model/performance profile is persisted in `~/.rag_db/indexer_tuning.json` and reused in future runs.
+
+### Build macOS installer
+
+```bash
+./bin/build_run_macos.sh
+```
+
+This generates `rag-setup-macos.run` with macOS-specific adaptations:
+- checks `uname=Darwin`
+- Homebrew-based install hints (`python`, `docker`)
+- Docker Desktop readiness validation
+- portable payload extraction (no GNU `base64 -d` dependency)
+- shebang replacement without GNU `sed -i`
+- Cursor macOS config path support (`~/Library/Application Support/Cursor/User/mcp.json`)
 
 ## What the setup does
 
@@ -63,9 +84,7 @@ Add to `~/.claude.json` inside `"mcpServers"`:
   "env": {
     "CHROMA_HOST": "localhost",
     "CHROMA_PORT": "8000",
-    "MCP_MODEL_DIR": "~/.cache/my-custom-rag-python/models",
-    "MCP_EMBEDDING_MODEL": "jina",
-    "MCP_JINA_QUANTIZATION": "default"
+    "TOKENIZERS_PARALLELISM": "false"
   }
 }
 ```
@@ -84,13 +103,14 @@ On startup, `mcp-rag-server` now:
 You can choose embedding model and Jina quantization through environment variables:
 
 ```bash
-MCP_EMBEDDING_MODEL=jina|bge
+MCP_EMBEDDING_MODEL=jina|bge|hybrid
 MCP_JINA_QUANTIZATION=default|dynamic-int8
 ```
 
 Recommendation:
 - `jina` (`jinaai/jina-embeddings-v3`): better performance for code-only projects.
 - `bge` (`BAAI/bge-m3`): better for mixed content projects (code + documentation).
+- `hybrid` (`jinaai/jina-embeddings-v2-base-code` + `BAAI/bge-m3`): builds two collections and is better for `ensemble` search mode.
 
 Jina quantization options (CPU):
 - `default`: no quantization, best quality, slower indexing.
@@ -98,16 +118,30 @@ Jina quantization options (CPU):
 
 Notes:
 - `MCP_JINA_QUANTIZATION` is only applied when `MCP_EMBEDDING_MODEL=jina`.
-- Default behavior is `MCP_EMBEDDING_MODEL=jina` and `MCP_JINA_QUANTIZATION=default`.
+- Default behavior is `MCP_EMBEDDING_MODEL=jina` and `MCP_JINA_QUANTIZATION=dynamic-int8`.
+
+### Indexing performance profiles (no AI/ML)
+
+The indexer now supports two profiles:
+- `autotune` (recommended): uses local machine metrics (`psutil`) + a short `model.encode` micro-benchmark to choose `MCP_EMBEDDING_BATCH_SIZE`, `MCP_CHUNK_SIZE`, and `MCP_CHUNK_OVERLAP` with cost/benefit focus.
+- `max-performance`: favors throughput and higher parameters. Warning shown:
+  `Este modo pode elevar consideravelmente o consumo de memória e causar encerramento por OOM (exit 137).`
+
+Behavior:
+- Interactive terminal: prompts for profile selection.
+- Non-interactive execution: defaults to `autotune`.
+- Existing env vars keep priority (`MCP_EMBEDDING_BATCH_SIZE`, `MCP_CHUNK_SIZE`, `MCP_CHUNK_OVERLAP`).
+- Chosen values are saved in `~/.rag_db/indexer_tuning.json` and reused by `mcp-rag-server` on future indexing calls.
 
 For standalone indexing (`bin/indexer_full.py`), you can also pass flags:
 
 ```bash
-python3 bin/indexer_full.py . --embedding-model jina --jina-quantization dynamic-int8
+python3 bin/indexer_full.py . --embedding-model jina --jina-quantization dynamic-int8 --perf-profile autotune
 python3 bin/indexer_full.py . --embedding-model bge
+python3 bin/indexer_full.py . --embedding-model hybrid --perf-profile max-performance
 ```
 
-If no flags/env are provided and the command is run in a terminal, the script prompts the user to choose.
+If no flags/env are provided and the command is run in a terminal, the script prompts the user to choose model/profile.
 
 ## Available MCP tools
 

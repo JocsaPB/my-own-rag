@@ -34,37 +34,217 @@ VENV_PIP="${VENV_DIR}/bin/pip"
 CONTAINER_NAME="chromadb-rag"
 MCP_USAGE_LOG="${MCP_USAGE_LOG:-${HOME}/.rag_db/mcp_usage.log}"
 REFRESH_INTERVAL=5
+UI_LANG="${CHROMA_MONITOR_LANG:-${RAG_SETUP_LANG:-}}"
+YES_NO_HINT="[s/N]"
+
+# ---------------------------------------------------------------------------
+# Idioma e i18n
+# ---------------------------------------------------------------------------
+
+set_lang_defaults() {
+    if [[ "$UI_LANG" == "en-us" ]]; then
+        YES_NO_HINT="[y/N]"
+    else
+        YES_NO_HINT="[s/N]"
+    fi
+}
+
+select_ui_language() {
+    if [[ -n "$UI_LANG" ]]; then
+        UI_LANG="$(echo "$UI_LANG" | tr '[:upper:]' '[:lower:]')"
+        case "$UI_LANG" in
+            pt-br|pt|en-us|en) ;;
+            *) UI_LANG="pt-br" ;;
+        esac
+        [[ "$UI_LANG" == "pt" ]] && UI_LANG="pt-br"
+        [[ "$UI_LANG" == "en" ]] && UI_LANG="en-us"
+        set_lang_defaults
+        return
+    fi
+
+    if [[ ! -t 0 ]]; then
+        UI_LANG="pt-br"
+        set_lang_defaults
+        return
+    fi
+
+    echo ""
+    echo -e "${GREEN}Idioma / Language: [1] PT-BR [2] EN-US (padrão/default: 1)${NC}"
+    read -r -p "> " LANG_CHOICE
+    case "$LANG_CHOICE" in
+        2|en|EN|en-us|EN-US|english|English) UI_LANG="en-us" ;;
+        *) UI_LANG="pt-br" ;;
+    esac
+    set_lang_defaults
+}
+
+t() {
+    local key="$1"
+    if [[ "$UI_LANG" == "en-us" ]]; then
+        case "$key" in
+            err_prefix) echo "ERROR" ;;
+            py_missing) echo "python3 not found. Install: sudo apt install python3 python3-venv" ;;
+            py_venv_missing) echo "python3-venv not found. Install: sudo apt install python3-venv" ;;
+            creating_venv) echo "Creating virtual environment at" ;;
+            venv_created) echo "Venv created." ;;
+            installing_chromadb) echo "Installing chromadb in venv (first time only)..." ;;
+            chromadb_installed) echo "chromadb installed." ;;
+            header_title) echo "ChromaDB Monitor — Local RAG" ;;
+            db_label) echo "Database" ;;
+            data_label) echo "Data" ;;
+            querying_chroma) echo "Querying ChromaDB at" ;;
+            press_ctrl_c) echo "Press Ctrl+C to exit." ;;
+            dir_not_found) echo "Directory not found:" ;;
+            db_not_init) echo "Database not initialized yet." ;;
+            monitoring_size) echo "Monitoring size of" ;;
+            files_in_db) echo "Files in database" ;;
+            size_label) echo "Size" ;;
+            internal_files_short) echo "Internal files" ;;
+            docker_not_found) echo "Docker not found." ;;
+            container_not_running) echo "Container is not running:" ;;
+            active_containers) echo "Active containers:" ;;
+            none) echo "None." ;;
+            showing_logs) echo "Showing logs from" ;;
+            logs_tip) echo "Tip: run indexer in another terminal to see incoming requests." ;;
+            mcp_log_missing) echo "MCP log file not found:" ;;
+            mcp_log_hint1) echo "File is created automatically when MCP server receives calls." ;;
+            mcp_log_hint2) echo "Restart/update mcp-rag-server and use an MCP tool." ;;
+            mcp_log_hint_short) echo "File is created automatically when MCP server receives calls." ;;
+            showing_mcp_usage) echo "Showing MCP usage in real time (Ctrl+C to exit)" ;;
+            source) echo "Source" ;;
+            panel_updates) echo "Panel updates every" ;;
+            container_docker) echo "Docker container" ;;
+            running) echo "running" ;;
+            started) echo "started" ;;
+            offline) echo "offline" ;;
+            start_with) echo "Start with" ;;
+            disk_db) echo "Database on disk" ;;
+            internal_files) echo "internal files in" ;;
+            collections_chunks) echo "Collections and chunks" ;;
+            last_update) echo "Last update" ;;
+            next_in) echo "next in" ;;
+            reset_attention) echo "[WARNING] This action will delete all ChromaDB collections and chunks." ;;
+            reset_irreversible) echo "This operation is irreversible." ;;
+            confirm_continue) echo "Continue?" ;;
+            confirm_type_reset) echo "Type RESET to confirm:" ;;
+            reset_cancelled) echo "Reset canceled." ;;
+            status_online) echo "Status: ● ChromaDB online" ;;
+            status_offline) echo "Status: ● ChromaDB offline" ;;
+            choose_option) echo "Choose an option:" ;;
+            menu_1) echo "[1] Count chunks now           (single snapshot)" ;;
+            menu_2) echo "[2] Watch chunks in real time (updates every ${REFRESH_INTERVAL}s)" ;;
+            menu_3) echo "[3] Watch disk size            (watch ~/.rag_db)" ;;
+            menu_4) echo "[4] Show Docker logs           (HTTP requests to ChromaDB)" ;;
+            menu_5) echo "[5] Show MCP usage logs        (actor + tool)" ;;
+            menu_6) echo "[6] MCP usage summary          (top tools/actors + 24h)" ;;
+            menu_7) echo "[7] Full dashboard             (all in one, auto refresh)" ;;
+            menu_8) echo "[8] Reset ChromaDB             (deletes all collections)" ;;
+            menu_0) echo "[0] Exit" ;;
+            option_prompt) echo "Option:" ;;
+            invalid_option) echo "Invalid option." ;;
+            unknown_mode) echo "Unknown mode" ;;
+            usage) echo "Usage: $0 [chunks|watch|disk|logs|mcp-logs|mcp-summary|full|reset|menu]" ;;
+            *) echo "$key" ;;
+        esac
+    else
+        case "$key" in
+            err_prefix) echo "ERRO" ;;
+            py_missing) echo "python3 não encontrado. Instale: sudo apt install python3 python3-venv" ;;
+            py_venv_missing) echo "python3-venv não encontrado. Instale: sudo apt install python3-venv" ;;
+            creating_venv) echo "Criando ambiente virtual em" ;;
+            venv_created) echo "Venv criado." ;;
+            installing_chromadb) echo "Instalando chromadb no venv (necessário apenas na primeira vez)..." ;;
+            chromadb_installed) echo "chromadb instalado." ;;
+            header_title) echo "Monitor ChromaDB — RAG Local" ;;
+            db_label) echo "Banco" ;;
+            data_label) echo "Dados" ;;
+            querying_chroma) echo "Consultando ChromaDB em" ;;
+            press_ctrl_c) echo "Pressione Ctrl+C para sair." ;;
+            dir_not_found) echo "Diretório não encontrado:" ;;
+            db_not_init) echo "O banco ainda não foi inicializado." ;;
+            monitoring_size) echo "Monitorando tamanho de" ;;
+            files_in_db) echo "Arquivos no banco" ;;
+            size_label) echo "Tamanho" ;;
+            internal_files_short) echo "Arquivos internos" ;;
+            docker_not_found) echo "Docker não encontrado." ;;
+            container_not_running) echo "Container não está rodando:" ;;
+            active_containers) echo "Containers ativos:" ;;
+            none) echo "Nenhum." ;;
+            showing_logs) echo "Exibindo logs de" ;;
+            logs_tip) echo "Dica: rode o indexer em outro terminal para ver as requisições entrando." ;;
+            mcp_log_missing) echo "Arquivo de log MCP não encontrado:" ;;
+            mcp_log_hint1) echo "O arquivo será criado automaticamente quando o MCP Server receber chamadas." ;;
+            mcp_log_hint2) echo "Reinicie/atualize o mcp-rag-server e use alguma ferramenta MCP." ;;
+            mcp_log_hint_short) echo "O arquivo será criado automaticamente quando o MCP Server receber chamadas." ;;
+            showing_mcp_usage) echo "Exibindo uso MCP em tempo real (Ctrl+C para sair)" ;;
+            source) echo "Fonte" ;;
+            panel_updates) echo "Painel atualiza a cada" ;;
+            container_docker) echo "Container Docker" ;;
+            running) echo "rodando" ;;
+            started) echo "iniciado" ;;
+            offline) echo "offline" ;;
+            start_with) echo "Inicie com" ;;
+            disk_db) echo "Banco em disco" ;;
+            internal_files) echo "arquivos internos em" ;;
+            collections_chunks) echo "Coleções e Chunks" ;;
+            last_update) echo "Última atualização" ;;
+            next_in) echo "próxima em" ;;
+            reset_attention) echo "[ATENÇÃO] Esta ação vai apagar todas as coleções e chunks do ChromaDB." ;;
+            reset_irreversible) echo "Essa operação é irreversível." ;;
+            confirm_continue) echo "Deseja continuar?" ;;
+            confirm_type_reset) echo "Digite ZERAR para confirmar:" ;;
+            reset_cancelled) echo "Reset cancelado." ;;
+            status_online) echo "Status: ● ChromaDB online" ;;
+            status_offline) echo "Status: ● ChromaDB offline" ;;
+            choose_option) echo "Escolha uma opção:" ;;
+            menu_1) echo "[1] Contar chunks agora           (snapshot único)" ;;
+            menu_2) echo "[2] Monitorar chunks em tempo real (atualiza a cada ${REFRESH_INTERVAL}s)" ;;
+            menu_3) echo "[3] Monitorar tamanho no disco     (watch no ~/.rag_db)" ;;
+            menu_4) echo "[4] Ver logs do Docker             (requisições HTTP ao ChromaDB)" ;;
+            menu_5) echo "[5] Ver logs de uso MCP            (quem acessa + ferramenta usada)" ;;
+            menu_6) echo "[6] Resumo de uso MCP              (top ferramentas/atores e 24h)" ;;
+            menu_7) echo "[7] Painel completo                (tudo junto, atualiza automático)" ;;
+            menu_8) echo "[8] Zerar ChromaDB                 (apaga todas as coleções)" ;;
+            menu_0) echo "[0] Sair" ;;
+            option_prompt) echo "Opção:" ;;
+            invalid_option) echo "Opção inválida." ;;
+            unknown_mode) echo "Modo desconhecido" ;;
+            usage) echo "Uso: $0 [chunks|watch|disk|logs|mcp-logs|mcp-summary|full|reset|menu]" ;;
+            *) echo "$key" ;;
+        esac
+    fi
+}
+
+log_info()  { echo -e "${GREEN}[+]${NC} $*"; }
+log_warn()  { echo -e "${YELLOW}[!]${NC} $*"; }
+log_error() { echo -e "${RED}[$(t err_prefix)]${NC} $*" >&2; }
 
 # ---------------------------------------------------------------------------
 # Funções: venv e dependências
 # ---------------------------------------------------------------------------
 
-log_info()  { echo -e "${GREEN}[+]${NC} $*"; }
-log_warn()  { echo -e "${YELLOW}[!]${NC} $*"; }
-log_error() { echo -e "${RED}[ERRO]${NC} $*" >&2; }
-
 ensure_venv() {
     # Garante que o venv existe e tem o chromadb instalado
     if [[ ! -f "${VENV_PYTHON}" ]]; then
         if ! command -v python3 &>/dev/null; then
-            log_error "python3 não encontrado. Instale: sudo apt install python3 python3-venv"
+            log_error "$(t py_missing)"
             exit 1
         fi
         if ! python3 -m venv --help &>/dev/null; then
-            log_error "python3-venv não encontrado. Instale: sudo apt install python3-venv"
+            log_error "$(t py_venv_missing)"
             exit 1
         fi
-        log_info "Criando ambiente virtual em ${VENV_DIR}..."
+        log_info "$(t creating_venv) ${VENV_DIR}..."
         python3 -m venv "${VENV_DIR}"
-        log_info "Venv criado."
+        log_info "$(t venv_created)"
     fi
 
     # Instala chromadb no venv se ainda não estiver lá
     if ! "${VENV_PYTHON}" -c "import chromadb" 2>/dev/null; then
-        log_info "Instalando chromadb no venv (necessário apenas na primeira vez)..."
+        log_info "$(t installing_chromadb)"
         "${VENV_PIP}" install --quiet --upgrade pip
         "${VENV_PIP}" install --quiet chromadb
-        log_info "chromadb instalado."
+        log_info "$(t chromadb_installed)"
     fi
 }
 
@@ -87,10 +267,10 @@ print_header() {
     clear
     echo -e "${BOLD}${BLUE}"
     echo "  ╔══════════════════════════════════════════════════════╗"
-    echo "  ║          ChromaDB Monitor — RAG Local                ║"
+    printf "  ║          %-44s║\n" "$(t header_title)"
     echo "  ╚══════════════════════════════════════════════════════╝"
     echo -e "${NC}"
-    echo -e "  ${DIM}Banco: ${CHROMA_HOST}:${CHROMA_PORT}  |  Dados: ${RAG_DB_DIR}${NC}"
+    echo -e "  ${DIM}$(t db_label): ${CHROMA_HOST}:${CHROMA_PORT}  |  $(t data_label): ${RAG_DB_DIR}${NC}"
     echo ""
 }
 
@@ -101,15 +281,18 @@ cmd_chunks() {
     ensure_venv
 
     echo ""
-    echo -e "${BOLD}${CYAN}  Consultando ChromaDB em ${CHROMA_HOST}:${CHROMA_PORT}...${NC}"
+    echo -e "${BOLD}${CYAN}  $(t querying_chroma) ${CHROMA_HOST}:${CHROMA_PORT}...${NC}"
     echo ""
 
-    "${VENV_PYTHON}" - << 'PYEOF'
+    MONITOR_LANG="${UI_LANG}" "${VENV_PYTHON}" - << 'PYEOF'
+import os
 import sys
 import chromadb
 
 CHROMA_HOST = "localhost"
 CHROMA_PORT = 8000
+LANG = os.getenv("MONITOR_LANG", "pt-br").lower()
+IS_EN = LANG == "en-us"
 
 BOLD   = "\033[1m"
 GREEN  = "\033[0;32m"
@@ -123,20 +306,28 @@ try:
     client = chromadb.HttpClient(host=CHROMA_HOST, port=CHROMA_PORT)
     client.heartbeat()
 except Exception as e:
-    print(f"{RED}[ERRO] ChromaDB offline ou inacessível: {e}{NC}")
-    print(f"       Verifique: docker ps | grep chromadb")
+    if IS_EN:
+        print(f"{RED}[ERROR] ChromaDB offline or unreachable: {e}{NC}")
+        print("       Check: docker ps | grep chromadb")
+    else:
+        print(f"{RED}[ERRO] ChromaDB offline ou inacessível: {e}{NC}")
+        print("       Verifique: docker ps | grep chromadb")
     sys.exit(1)
 
 collections = client.list_collections()
 
 if not collections:
-    print(f"{YELLOW}  Nenhuma coleção encontrada.{NC}")
-    print(f"  Execute o indexer para popular o banco.")
+    if IS_EN:
+        print(f"{YELLOW}  No collections found.{NC}")
+        print("  Run indexer to populate database.")
+    else:
+        print(f"{YELLOW}  Nenhuma coleção encontrada.{NC}")
+        print("  Execute o indexer para popular o banco.")
     sys.exit(0)
 
 total_global = 0
 
-print(f"  {'Coleção':<25} {'Chunks':>10}  {'Detalhes'}")
+print(f"  {('Collection' if IS_EN else 'Coleção'):<25} {'Chunks':>10}  {('Details' if IS_EN else 'Detalhes')}")
 print(f"  {'-'*60}")
 
 for col in collections:
@@ -154,14 +345,19 @@ for col in collections:
         if m and "file_path" in m:
             unique_files.add(m["file_path"])
 
+    file_label = "unique files" if IS_EN else "arquivos únicos"
     print(f"  {GREEN}{BOLD}{col.name:<25}{NC}  {CYAN}{count:>7} chunks{NC}  "
-          f"{DIM}({len(unique_files)} arquivos únicos){NC}")
+          f"{DIM}({len(unique_files)} {file_label}){NC}")
     if meta_keys:
-        print(f"  {'':25}  {'':10}  {DIM}campos: {', '.join(meta_keys)}{NC}")
+        fields_label = "fields" if IS_EN else "campos"
+        print(f"  {'':25}  {'':10}  {DIM}{fields_label}: {', '.join(meta_keys)}{NC}")
     print()
 
 print(f"  {'-'*60}")
-print(f"  {BOLD}Total global: {CYAN}{total_global} chunks{NC}{BOLD} em {len(collections)} coleção(ões){NC}")
+if IS_EN:
+    print(f"  {BOLD}Global total: {CYAN}{total_global} chunks{NC}{BOLD} in {len(collections)} collection(s){NC}")
+else:
+    print(f"  {BOLD}Total global: {CYAN}{total_global} chunks{NC}{BOLD} em {len(collections)} coleção(ões){NC}")
 print()
 PYEOF
 }
@@ -172,7 +368,7 @@ PYEOF
 cmd_watch() {
     ensure_venv
 
-    echo -e "${DIM}  Pressione Ctrl+C para sair.${NC}"
+    echo -e "${DIM}  $(t press_ctrl_c)${NC}"
     echo ""
 
     LAST_COUNT=-1
@@ -226,23 +422,23 @@ PYEOF
 # ---------------------------------------------------------------------------
 cmd_disk() {
     if [[ ! -d "$RAG_DB_DIR" ]]; then
-        echo -e "${YELLOW}[!]${NC} Diretório não encontrado: ${RAG_DB_DIR}"
-        echo -e "    O banco ainda não foi inicializado."
+        echo -e "${YELLOW}[!]${NC} $(t dir_not_found) ${RAG_DB_DIR}"
+        echo -e "    $(t db_not_init)"
         exit 1
     fi
 
-    echo -e "${DIM}  Monitorando tamanho de ${RAG_DB_DIR} (Ctrl+C para sair)${NC}"
+    echo -e "${DIM}  $(t monitoring_size) ${RAG_DB_DIR} (Ctrl+C)${NC}"
     echo ""
 
     if command -v watch &>/dev/null; then
         watch -n "$REFRESH_INTERVAL" -d \
-            "du -sh ${RAG_DB_DIR} && echo '' && find ${RAG_DB_DIR} -type f | wc -l | xargs -I{} echo 'Arquivos no banco: {}'"
+            "du -sh ${RAG_DB_DIR} && echo '' && find ${RAG_DB_DIR} -type f | wc -l | xargs -I{} echo '$(t files_in_db): {}'"
     else
         while true; do
             SIZE=$(du -sh "$RAG_DB_DIR" 2>/dev/null | cut -f1)
             FILES=$(find "$RAG_DB_DIR" -type f 2>/dev/null | wc -l)
-            printf "\r  ${BOLD}[%s]${NC}  Tamanho: ${CYAN}${BOLD}%s${NC}  |  Arquivos internos: ${DIM}%s${NC}%20s" \
-                "$(date '+%H:%M:%S')" "$SIZE" "$FILES" ""
+            printf "\r  ${BOLD}[%s]${NC}  %s: ${CYAN}${BOLD}%s${NC}  |  %s: ${DIM}%s${NC}%20s" \
+                "$(date '+%H:%M:%S')" "$(t size_label)" "$SIZE" "$(t internal_files_short)" "$FILES" ""
             sleep "$REFRESH_INTERVAL"
         done
     fi
@@ -253,20 +449,20 @@ cmd_disk() {
 # ---------------------------------------------------------------------------
 cmd_logs() {
     if ! command -v docker &>/dev/null; then
-        log_error "Docker não encontrado."
+        log_error "$(t docker_not_found)"
         exit 1
     fi
 
     if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-        echo -e "${YELLOW}[!]${NC} Container '${CONTAINER_NAME}' não está rodando."
+        echo -e "${YELLOW}[!]${NC} $(t container_not_running) '${CONTAINER_NAME}'."
         echo ""
-        echo -e "  Containers ativos:"
-        docker ps --format "  - {{.Names}} ({{.Status}})" 2>/dev/null || echo "  Nenhum."
+        echo -e "  $(t active_containers)"
+        docker ps --format "  - {{.Names}} ({{.Status}})" 2>/dev/null || echo "  $(t none)"
         exit 1
     fi
 
-    echo -e "${DIM}  Exibindo logs de '${CONTAINER_NAME}' (Ctrl+C para sair)${NC}"
-    echo -e "${DIM}  Dica: rode o indexer em outro terminal para ver as requisições entrando.${NC}"
+    echo -e "${DIM}  $(t showing_logs) '${CONTAINER_NAME}' (Ctrl+C)${NC}"
+    echo -e "${DIM}  $(t logs_tip)${NC}"
     echo ""
     docker logs -f --tail=30 "$CONTAINER_NAME"
 }
@@ -278,14 +474,14 @@ cmd_mcp_logs() {
     ensure_venv
 
     if [[ ! -f "$MCP_USAGE_LOG" ]]; then
-        echo -e "${YELLOW}[!]${NC} Arquivo de log MCP não encontrado: ${MCP_USAGE_LOG}"
-        echo -e "    O arquivo será criado automaticamente quando o MCP Server receber chamadas."
-        echo -e "    Reinicie/atualize o mcp-rag-server e use alguma ferramenta MCP."
+        echo -e "${YELLOW}[!]${NC} $(t mcp_log_missing) ${MCP_USAGE_LOG}"
+        echo -e "    $(t mcp_log_hint1)"
+        echo -e "    $(t mcp_log_hint2)"
         exit 1
     fi
 
-    echo -e "${DIM}  Exibindo uso MCP em tempo real (Ctrl+C para sair)${NC}"
-    echo -e "${DIM}  Fonte: ${MCP_USAGE_LOG}${NC}"
+    echo -e "${DIM}  $(t showing_mcp_usage)${NC}"
+    echo -e "${DIM}  $(t source): ${MCP_USAGE_LOG}${NC}"
     echo ""
 
     # Formata JSONL em linhas legíveis:
@@ -323,16 +519,20 @@ cmd_mcp_summary() {
     ensure_venv
 
     if [[ ! -f "$MCP_USAGE_LOG" ]]; then
-        echo -e "${YELLOW}[!]${NC} Arquivo de log MCP não encontrado: ${MCP_USAGE_LOG}"
-        echo -e "    O arquivo será criado automaticamente quando o MCP Server receber chamadas."
+        echo -e "${YELLOW}[!]${NC} $(t mcp_log_missing) ${MCP_USAGE_LOG}"
+        echo -e "    $(t mcp_log_hint_short)"
         exit 1
     fi
 
-    "${VENV_PYTHON}" - "$MCP_USAGE_LOG" <<'PYEOF'
+    MONITOR_LANG="${UI_LANG}" "${VENV_PYTHON}" - "$MCP_USAGE_LOG" <<'PYEOF'
 import json
+import os
 import sys
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+
+LANG = os.getenv("MONITOR_LANG", "pt-br").lower()
+IS_EN = LANG == "en-us"
 
 path = sys.argv[1]
 now = datetime.now(timezone.utc)
@@ -389,47 +589,47 @@ with open(path, "r", encoding="utf-8") as f:
                 actors_24h[actor] += 1
                 status_24h[status] += 1
 
-print("Resumo de uso MCP")
+print("MCP usage summary" if IS_EN else "Resumo de uso MCP")
 print("-" * 72)
-print(f"Arquivo de log: {path}")
-print(f"Eventos totais (start/end): {total_events}")
-print(f"Chamadas finalizadas (tool_call_end): {total_calls_end}")
-print(f"Status finalizadas: ok={ok_calls} | error={error_calls}")
+print(f"{'Log file' if IS_EN else 'Arquivo de log'}: {path}")
+print(f"{'Total events (start/end)' if IS_EN else 'Eventos totais (start/end)'}: {total_events}")
+print(f"{'Completed calls (tool_call_end)' if IS_EN else 'Chamadas finalizadas (tool_call_end)'}: {total_calls_end}")
+print(f"{'Completed status' if IS_EN else 'Status finalizadas'}: ok={ok_calls} | error={error_calls}")
 print()
 
-print("Top ferramentas (geral)")
+print("Top tools (overall)" if IS_EN else "Top ferramentas (geral)")
 if tools_all:
     for name, count in tools_all.most_common(10):
         print(f"  - {name}: {count}")
 else:
-    print("  - sem dados")
+    print("  - no data" if IS_EN else "  - sem dados")
 print()
 
-print("Top atores (geral)")
+print("Top actors (overall)" if IS_EN else "Top atores (geral)")
 if actors_all:
     for name, count in actors_all.most_common(10):
         print(f"  - {name}: {count}")
 else:
-    print("  - sem dados")
+    print("  - no data" if IS_EN else "  - sem dados")
 print()
 
-print("Ultimas 24h")
-print(f"  - total finalizadas: {sum(tools_24h.values())}")
-print(f"  - status: {dict(status_24h) if status_24h else {'sem_dados': 0}}")
+print("Last 24h" if IS_EN else "Ultimas 24h")
+print(f"  - {'completed total' if IS_EN else 'total finalizadas'}: {sum(tools_24h.values())}")
+print(f"  - status: {dict(status_24h) if status_24h else ({'no_data': 0} if IS_EN else {'sem_dados': 0})}")
 
-print("  - top ferramentas (24h)")
+print("  - top tools (24h)" if IS_EN else "  - top ferramentas (24h)")
 if tools_24h:
     for name, count in tools_24h.most_common(10):
         print(f"    * {name}: {count}")
 else:
-    print("    * sem dados")
+    print("    * no data" if IS_EN else "    * sem dados")
 
-print("  - top atores (24h)")
+print("  - top actors (24h)" if IS_EN else "  - top atores (24h)")
 if actors_24h:
     for name, count in actors_24h.most_common(10):
         print(f"    * {name}: {count}")
 else:
-    print("    * sem dados")
+    print("    * no data" if IS_EN else "    * sem dados")
 PYEOF
 }
 
@@ -439,7 +639,7 @@ PYEOF
 cmd_full() {
     ensure_venv
 
-    echo -e "${DIM}  Painel atualiza a cada ${REFRESH_INTERVAL}s — Ctrl+C para sair${NC}"
+    echo -e "${DIM}  $(t panel_updates) ${REFRESH_INTERVAL}s — Ctrl+C${NC}"
     echo ""
     sleep 1
 
@@ -447,47 +647,54 @@ cmd_full() {
         print_header
 
         # Status do container
-        echo -e "  ${BOLD}Container Docker${NC}"
+        echo -e "  ${BOLD}$(t container_docker)${NC}"
         if command -v docker &>/dev/null && docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${CONTAINER_NAME}$"; then
             UPTIME=$(docker inspect --format='{{.State.StartedAt}}' "$CONTAINER_NAME" 2>/dev/null | cut -c1-19 | tr 'T' ' ')
-            echo -e "  ${GREEN}●${NC} ${CONTAINER_NAME} rodando  ${DIM}(iniciado: ${UPTIME}Z)${NC}"
+            echo -e "  ${GREEN}●${NC} ${CONTAINER_NAME} $(t running)  ${DIM}($(t started): ${UPTIME}Z)${NC}"
         else
-            echo -e "  ${RED}●${NC} ${CONTAINER_NAME} offline"
+            echo -e "  ${RED}●${NC} ${CONTAINER_NAME} $(t offline)"
         fi
         echo ""
 
         # Tamanho em disco
-        echo -e "  ${BOLD}Banco em disco${NC}"
+        echo -e "  ${BOLD}$(t disk_db)${NC}"
         if [[ -d "$RAG_DB_DIR" ]]; then
             DISK_SIZE=$(du -sh "$RAG_DB_DIR" 2>/dev/null | cut -f1)
             DISK_FILES=$(find "$RAG_DB_DIR" -type f 2>/dev/null | wc -l)
-            echo -e "  ${CYAN}${DISK_SIZE}${NC}  ${DIM}(${DISK_FILES} arquivos internos em ${RAG_DB_DIR})${NC}"
+            echo -e "  ${CYAN}${DISK_SIZE}${NC}  ${DIM}(${DISK_FILES} $(t internal_files) ${RAG_DB_DIR})${NC}"
         else
-            echo -e "  ${YELLOW}Diretório não encontrado: ${RAG_DB_DIR}${NC}"
+            echo -e "${YELLOW}$(t dir_not_found) ${RAG_DB_DIR}${NC}"
         fi
         echo ""
 
         # Coleções e chunks
-        echo -e "  ${BOLD}Coleções e Chunks${NC}"
-        "${VENV_PYTHON}" - 2>/dev/null << 'PYEOF'
-import chromadb, sys
+        echo -e "  ${BOLD}$(t collections_chunks)${NC}"
+        MONITOR_LANG="${UI_LANG}" "${VENV_PYTHON}" - 2>/dev/null << 'PYEOF'
+import chromadb, os, sys
 
 GREEN  = "\033[0;32m"; CYAN   = "\033[0;36m"
 YELLOW = "\033[1;33m"; RED    = "\033[0;31m"
 BOLD   = "\033[1m";    DIM    = "\033[2m"; NC = "\033[0m"
+LANG = os.getenv("MONITOR_LANG", "pt-br").lower()
+IS_EN = LANG == "en-us"
 
 try:
     client = chromadb.HttpClient(host="localhost", port=8000)
     client.heartbeat()
 except Exception as e:
-    print(f"  {RED}ChromaDB inacessível: {e}{NC}")
+    msg = "ChromaDB unreachable" if IS_EN else "ChromaDB inacessível"
+    print(f"  {RED}{msg}: {e}{NC}")
     sys.exit(0)
 
 collections = client.list_collections()
 
 if not collections:
-    print(f"  {YELLOW}Banco vazio — nenhuma coleção encontrada.{NC}")
-    print(f"  Execute: indexer_full.py")
+    if IS_EN:
+        print(f"  {YELLOW}Database empty — no collections found.{NC}")
+        print("  Run: indexer_full.py")
+    else:
+        print(f"  {YELLOW}Banco vazio — nenhuma coleção encontrada.{NC}")
+        print("  Execute: indexer_full.py")
     sys.exit(0)
 
 total_chunks = 0
@@ -506,15 +713,18 @@ for col in collections:
     bar = "█" * bar_len + "░" * (30 - bar_len)
 
     print(f"  {GREEN}{BOLD}{col.name}{NC}")
-    print(f"  {CYAN}{bar}{NC}  {BOLD}{count:,}{NC} chunks  |  {len(unique_files):,} arquivos")
+    print(f"  {CYAN}{bar}{NC}  {BOLD}{count:,}{NC} chunks  |  {len(unique_files):,} {'files' if IS_EN else 'arquivos'}")
     print()
 
 print(f"  {'─'*55}")
-print(f"  {BOLD}Total: {CYAN}{total_chunks:,} chunks{NC}{BOLD} em {total_files:,} arquivo(s){NC}")
+if IS_EN:
+    print(f"  {BOLD}Total: {CYAN}{total_chunks:,} chunks{NC}{BOLD} in {total_files:,} file(s){NC}")
+else:
+    print(f"  {BOLD}Total: {CYAN}{total_chunks:,} chunks{NC}{BOLD} em {total_files:,} arquivo(s){NC}")
 PYEOF
 
         echo ""
-        echo -e "  ${DIM}Última atualização: $(date '+%H:%M:%S') — próxima em ${REFRESH_INTERVAL}s${NC}"
+        echo -e "  ${DIM}$(t last_update): $(date '+%H:%M:%S') — $(t next_in) ${REFRESH_INTERVAL}s${NC}"
 
         sleep "$REFRESH_INTERVAL"
     done
@@ -527,35 +737,46 @@ cmd_reset() {
     ensure_venv
 
     echo ""
-    echo -e "${RED}${BOLD}[ATENÇÃO]${NC} Esta ação vai apagar ${BOLD}todas${NC} as coleções e chunks do ChromaDB."
-    echo -e "${YELLOW}Essa operação é irreversível.${NC}"
+    echo -e "${RED}${BOLD}$(t reset_attention)${NC}"
+    echo -e "${YELLOW}$(t reset_irreversible)${NC}"
     echo ""
 
-    read -rp "Deseja continuar? [s/N]: " confirm_reset
+    read -rp "$(t confirm_continue) ${YES_NO_HINT}: " confirm_reset
     confirm_reset="$(echo "${confirm_reset:-}" | tr '[:upper:]' '[:lower:]')"
     if [[ "$confirm_reset" != "s" && "$confirm_reset" != "sim" && "$confirm_reset" != "y" && "$confirm_reset" != "yes" ]]; then
-        log_info "Reset cancelado."
+        log_info "$(t reset_cancelled)"
         exit 0
     fi
 
-    read -rp "Digite ZERAR para confirmar: " final_confirmation
-    if [[ "${final_confirmation:-}" != "ZERAR" ]]; then
-        log_info "Reset cancelado."
+    local reset_keyword="ZERAR"
+    if [[ "$UI_LANG" == "en-us" ]]; then
+        reset_keyword="RESET"
+    fi
+
+    read -rp "$(t confirm_type_reset) " final_confirmation
+    if [[ "${final_confirmation:-}" != "${reset_keyword}" ]]; then
+        log_info "$(t reset_cancelled)"
         exit 0
     fi
 
-    "${VENV_PYTHON}" - << 'PYEOF'
+    MONITOR_LANG="${UI_LANG}" "${VENV_PYTHON}" - << 'PYEOF'
+import os
 import sys
 import chromadb
 
 CHROMA_HOST = "localhost"
 CHROMA_PORT = 8000
+LANG = os.getenv("MONITOR_LANG", "pt-br").lower()
+IS_EN = LANG == "en-us"
 
 try:
     client = chromadb.HttpClient(host=CHROMA_HOST, port=CHROMA_PORT)
     client.heartbeat()
 except Exception as e:
-    print(f"[ERRO] Não foi possível conectar ao ChromaDB em {CHROMA_HOST}:{CHROMA_PORT}: {e}")
+    if IS_EN:
+        print(f"[ERROR] Could not connect to ChromaDB at {CHROMA_HOST}:{CHROMA_PORT}: {e}")
+    else:
+        print(f"[ERRO] Não foi possível conectar ao ChromaDB em {CHROMA_HOST}:{CHROMA_PORT}: {e}")
     sys.exit(1)
 
 collections = client.list_collections()
@@ -564,7 +785,10 @@ for col in collections:
     client.delete_collection(name=col.name)
     removed += 1
 
-print(f"[+] Reset concluído. Coleções removidas: {removed}")
+if IS_EN:
+    print(f"[+] Reset completed. Collections removed: {removed}")
+else:
+    print(f"[+] Reset concluído. Coleções removidas: {removed}")
 PYEOF
 }
 
@@ -576,26 +800,26 @@ cmd_menu() {
     print_header
 
     if is_chroma_running; then
-        echo -e "  Status: ${GREEN}${BOLD}● ChromaDB online${NC}"
+        echo -e "  ${GREEN}${BOLD}$(t status_online)${NC}"
     else
-        echo -e "  Status: ${RED}${BOLD}● ChromaDB offline${NC}"
-        echo -e "  ${DIM}Inicie com: docker compose -f ~/docker-chromadb/docker-compose.yml up -d${NC}"
+        echo -e "  ${RED}${BOLD}$(t status_offline)${NC}"
+        echo -e "  ${DIM}$(t start_with): docker compose -f ~/docker-chromadb/docker-compose.yml up -d${NC}"
     fi
     echo ""
-    echo -e "  ${BOLD}Escolha uma opção:${NC}"
+    echo -e "  ${BOLD}$(t choose_option)${NC}"
     echo ""
-    echo -e "  ${CYAN}[1]${NC} Contar chunks agora           ${DIM}(snapshot único)${NC}"
-    echo -e "  ${CYAN}[2]${NC} Monitorar chunks em tempo real ${DIM}(atualiza a cada ${REFRESH_INTERVAL}s)${NC}"
-    echo -e "  ${CYAN}[3]${NC} Monitorar tamanho no disco     ${DIM}(watch no ~/.rag_db)${NC}"
-    echo -e "  ${CYAN}[4]${NC} Ver logs do Docker             ${DIM}(requisições HTTP ao ChromaDB)${NC}"
-    echo -e "  ${CYAN}[5]${NC} Ver logs de uso MCP            ${DIM}(quem acessa + ferramenta usada)${NC}"
-    echo -e "  ${CYAN}[6]${NC} Resumo de uso MCP              ${DIM}(top ferramentas/atores e 24h)${NC}"
-    echo -e "  ${CYAN}[7]${NC} Painel completo                ${DIM}(tudo junto, atualiza automático)${NC}"
-    echo -e "  ${CYAN}[8]${NC} Zerar ChromaDB                 ${DIM}(apaga todas as coleções)${NC}"
+    echo -e "  ${CYAN}$(t menu_1)${NC}"
+    echo -e "  ${CYAN}$(t menu_2)${NC}"
+    echo -e "  ${CYAN}$(t menu_3)${NC}"
+    echo -e "  ${CYAN}$(t menu_4)${NC}"
+    echo -e "  ${CYAN}$(t menu_5)${NC}"
+    echo -e "  ${CYAN}$(t menu_6)${NC}"
+    echo -e "  ${CYAN}$(t menu_7)${NC}"
+    echo -e "  ${CYAN}$(t menu_8)${NC}"
     echo ""
-    echo -e "  ${CYAN}[0]${NC} Sair"
+    echo -e "  ${CYAN}$(t menu_0)${NC}"
     echo ""
-    read -rp "  Opção: " choice
+    read -rp "  $(t option_prompt) " choice
 
     case "$choice" in
         1) echo ""; cmd_chunks ;;
@@ -607,13 +831,14 @@ cmd_menu() {
         7) cmd_full ;;
         8) cmd_reset ;;
         0) exit 0 ;;
-        *) echo -e "\n  ${YELLOW}Opção inválida.${NC}"; sleep 1; cmd_menu ;;
+        *) echo -e "\n  ${YELLOW}$(t invalid_option)${NC}"; sleep 1; cmd_menu ;;
     esac
 }
 
 # ---------------------------------------------------------------------------
 # Dispatcher
 # ---------------------------------------------------------------------------
+select_ui_language
 case "${1:-menu}" in
     chunks)  cmd_chunks ;;
     watch)   cmd_watch  ;;
@@ -625,8 +850,8 @@ case "${1:-menu}" in
     reset)   cmd_reset  ;;
     menu)    cmd_menu   ;;
     *)
-        echo -e "${RED}[ERRO]${NC} Modo desconhecido: '$1'"
-        echo "Uso: $0 [chunks|watch|disk|logs|mcp-logs|mcp-summary|full|reset]"
+        echo -e "${RED}[$(t err_prefix)]${NC} $(t unknown_mode): '$1'"
+        echo "$(t usage)"
         exit 1
         ;;
 esac

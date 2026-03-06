@@ -59,7 +59,7 @@ cat > "$OUTPUT" << OUTER_EOF
 #   ./rag-setup.run --skip-index   # instala sem indexar
 #   ./rag-setup.run --only-index   # apenas indexa (infra já instalada)
 #   ./rag-setup.run --reinstall    # força reinstalação completa
-#   ./rag-setup.run --chage-model  # zera ambiente e reconfigura para trocar modelo
+#   ./rag-setup.run --change-model # zera ChromaDB e reconfigura modelo/perfil
 # =============================================================================
 
 set -euo pipefail
@@ -78,9 +78,9 @@ for arg in "\$@"; do
         --skip-index)  SKIP_INDEX=true ;;
         --only-index)  ONLY_INDEX=true ;;
         --reinstall)   REINSTALL=true ;;
-        --chage-model|-cg) CHANGE_MODEL=true ;;
+        --change-model|-cm|--chage-model|-cg) CHANGE_MODEL=true ;;
         --help|-h)
-            echo "Uso/Usage: \$0 [caminho/do/projeto|path/to/project] [--skip-index] [--only-index] [--reinstall] [--chage-model|-cg]"
+            echo "Uso/Usage: \$0 [caminho/do/projeto|path/to/project] [--skip-index] [--only-index] [--reinstall] [--change-model|-cm]"
             exit 0 ;;
         -*)
             echo "Opção desconhecida / Unknown option: \$arg. Use --help."
@@ -128,8 +128,7 @@ select_ui_language() {
     fi
 
     echo ""
-    echo -e "\${GREEN}Qual idioma você quer usar durante o setup? [1] Português (Brasil) [2] English (United States)\${NC}"
-    echo -e "\${CYAN}Which language do you want to use during setup? [1] Português (Brasil) [2] English (United States)\${NC}"
+    echo -e "\${GREEN}Idioma / Language: [1] PT-BR [2] EN-US (padrão/default: 1)\${NC}"
     read -r -p "> " LANG_CHOICE
     case "\$LANG_CHOICE" in
         2|en|EN|en-us|EN-US|english|English) UI_LANG="en-us" ;;
@@ -142,7 +141,7 @@ t() {
     local key="\$1"
     if [[ "\$UI_LANG" == "en-us" ]]; then
         case "\$key" in
-            usage) echo "Usage: \$0 [path/to/project] [--skip-index] [--only-index] [--reinstall] [--chage-model|-cg]" ;;
+            usage) echo "Usage: \$0 [path/to/project] [--skip-index] [--only-index] [--reinstall] [--change-model|-cm]" ;;
             unknown_option) echo "Unknown option: \$2. Use --help to see available options." ;;
             header_title) echo "RAG Local Setup - ChromaDB + MCP Server" ;;
             header_project) echo "Project to index" ;;
@@ -167,7 +166,7 @@ t() {
             hf_set) echo "HF_TOKEN set for this execution." ;;
             hf_empty) echo "Empty token; continuing without Hugging Face authentication." ;;
             hf_continue_no) echo "Continuing without HF_TOKEN." ;;
-            change_model_requested) echo "Model change requested (--chage-model). Resetting current environment before setup." ;;
+            change_model_requested) echo "Model change requested (--change-model). ChromaDB reset + model reconfiguration required." ;;
             reset_start) echo "Resetting previous RAG environment" ;;
             reset_done) echo "Environment reset complete." ;;
             only_index_mode) echo "Mode: index only" ;;
@@ -176,6 +175,12 @@ t() {
             path_not_found) echo "Path not found:" ;;
             indexing) echo "Indexing:" ;;
             indexing_done) echo "Indexing completed." ;;
+            index_failed_code) echo "Indexing failed. Indexer exit code:" ;;
+            index_oom_title) echo "Indexing stopped due to out-of-memory (OOM killer)." ;;
+            index_oom_reason) echo "The kernel force-killed the Python process (exit 137 / SIGKILL)." ;;
+            index_oom_hw_recommend) echo "For Jina in this workload, prefer RAM > 32 GB (practical baseline: 48 GB with dynamic-int8, 64 GB with default) and swap >= 16 GB." ;;
+            index_oom_next_1) echo "Immediate fallback: MCP_EMBEDDING_MODEL=bge ./rag-setup.run --only-index" ;;
+            index_oom_next_2) echo "If you need Jina, close heavy apps and increase swap before retrying." ;;
             section_venv) echo "Setting up Python virtual environment (~/.rag_venv)" ;;
             deps_ok) echo "Dependencies already installed in venv (transformers<5). Skipping. (use --reinstall to force)" ;;
             deps_incompatible) echo "Existing dependencies are incompatible or incomplete (transformers<5 is required for jinaai/jina-embeddings-v3). Reinstalling." ;;
@@ -217,6 +222,7 @@ t() {
             detected_cfg_files) echo "Detected files available for configuration:" ;;
             ask_apply_cfg) echo "Do you want to add/update MCP 'rag-codebase' in these files? \$YES_NO_HINT " ;;
             non_interactive_cfg_skip) echo "No interactive terminal; automatic MCP setup will not be applied." ;;
+            mcp_cfg_all_current) echo "MCP 'rag-codebase' already up to date in detected config files. Skipping." ;;
             cannot_update_cfg) echo "Could not update" ;;
             already_updated) echo "MCP 'rag-codebase' already exists and is up to date. Skipping." ;;
             updated_version) echo "Existing MCP 'rag-codebase' was updated to version" ;;
@@ -229,17 +235,17 @@ t() {
             section_skip_index) echo "Indexing skipped (--skip-index)" ;;
             how_to_index) echo "To index: ./rag-setup.run /path/to/project --only-index" ;;
             setup_done) echo "Setup complete!" ;;
-            summary_next) echo "Next steps:" ;;
-            next_1) echo "Restart Claude Code CLI to load MCP" ;;
-            next_2) echo "Use semantic_search_code to search the codebase" ;;
-            next_3) echo "To reindex: ./rag-setup.run --only-index" ;;
+            summary_next) echo "Next:" ;;
+            next_1) echo "Restart Claude Code CLI" ;;
+            next_2) echo "Use semantic_search_code" ;;
+            next_3) echo "Reindex: ./rag-setup.run --only-index" ;;
             err_prefix) echo "ERROR" ;;
             invalid_option) echo "Invalid option. Type one of the allowed answers shown in the prompt. Press Ctrl+C to exit." ;;
             *) echo "\$key" ;;
         esac
     else
         case "\$key" in
-            usage) echo "Uso: \$0 [caminho/do/projeto] [--skip-index] [--only-index] [--reinstall] [--chage-model|-cg]" ;;
+            usage) echo "Uso: \$0 [caminho/do/projeto] [--skip-index] [--only-index] [--reinstall] [--change-model|-cm]" ;;
             unknown_option) echo "Opção desconhecida: \$2. Use --help para ver as opções." ;;
             header_title) echo "RAG Local Setup — ChromaDB + MCP Server" ;;
             header_project) echo "Projeto a indexar" ;;
@@ -264,7 +270,7 @@ t() {
             hf_set) echo "HF_TOKEN definido para esta execução." ;;
             hf_empty) echo "Token vazio; seguindo sem autenticação no Hugging Face." ;;
             hf_continue_no) echo "Seguindo sem HF_TOKEN." ;;
-            change_model_requested) echo "Troca de modelo solicitada (--chage-model). Zerando o ambiente atual antes do setup." ;;
+            change_model_requested) echo "Troca de modelo solicitada (--change-model). É necessário zerar o ChromaDB e reindexar." ;;
             reset_start) echo "Zerando ambiente RAG anterior" ;;
             reset_done) echo "Reset do ambiente concluído." ;;
             only_index_mode) echo "Modo: apenas indexação" ;;
@@ -273,6 +279,12 @@ t() {
             path_not_found) echo "Caminho não encontrado:" ;;
             indexing) echo "Indexando:" ;;
             indexing_done) echo "Indexação concluída." ;;
+            index_failed_code) echo "Indexação falhou. Código de saída do indexador:" ;;
+            index_oom_title) echo "Indexação interrompida por falta de memória (OOM killer)." ;;
+            index_oom_reason) echo "O kernel encerrou o processo Python à força (exit 137 / SIGKILL)." ;;
+            index_oom_hw_recommend) echo "Para Jina nesta carga, prefira RAM > 32 GB (referência prática: 48 GB com dynamic-int8, 64 GB com default) e swap >= 16 GB." ;;
+            index_oom_next_1) echo "Fallback imediato: MCP_EMBEDDING_MODEL=bge ./rag-setup.run --only-index" ;;
+            index_oom_next_2) echo "Se precisar usar Jina, feche apps pesados e aumente swap antes de tentar novamente." ;;
             section_venv) echo "Configurando ambiente virtual Python (~/.rag_venv)" ;;
             deps_ok) echo "Dependências já instaladas no venv (transformers<5). Pulando. (use --reinstall para forçar)" ;;
             deps_incompatible) echo "Dependências existentes incompatíveis ou incompletas (é necessário transformers<5 para jinaai/jina-embeddings-v3). Reinstalando." ;;
@@ -314,6 +326,7 @@ t() {
             detected_cfg_files) echo "Arquivos detectados para possível configuração:" ;;
             ask_apply_cfg) echo "Deseja adicionar/atualizar o MCP 'rag-codebase' nesses arquivos? \$YES_NO_HINT " ;;
             non_interactive_cfg_skip) echo "Sem terminal interativo; configuração automática de MCP não será aplicada." ;;
+            mcp_cfg_all_current) echo "MCP 'rag-codebase' já está atualizado nos arquivos detectados. Pulando." ;;
             cannot_update_cfg) echo "Não foi possível atualizar" ;;
             already_updated) echo "MCP 'rag-codebase' já existe e está atualizado. Ignorando." ;;
             updated_version) echo "MCP 'rag-codebase' existente foi atualizado para a versão" ;;
@@ -326,10 +339,10 @@ t() {
             section_skip_index) echo "Indexação pulada (--skip-index)" ;;
             how_to_index) echo "Para indexar: ./rag-setup.run /caminho/do/projeto --only-index" ;;
             setup_done) echo "Setup concluído!" ;;
-            summary_next) echo "Próximos passos:" ;;
-            next_1) echo "Reinicie o Claude Code CLI para carregar o MCP" ;;
-            next_2) echo "Use semantic_search_code para buscar no código" ;;
-            next_3) echo "Para reindexar: ./rag-setup.run --only-index" ;;
+            summary_next) echo "Próximos:" ;;
+            next_1) echo "Reinicie o Claude Code CLI" ;;
+            next_2) echo "Use semantic_search_code" ;;
+            next_3) echo "Reindexar: ./rag-setup.run --only-index" ;;
             err_prefix) echo "ERRO" ;;
             invalid_option) echo "Opção inválida. Digite uma das respostas permitidas exibidas no prompt. Para sair, pressione Ctrl+C." ;;
             *) echo "\$key" ;;
@@ -529,10 +542,20 @@ reset_rag_environment() {
 
 if [[ "\$CHANGE_MODEL" == "true" ]]; then
     if [[ "\$ONLY_INDEX" == "true" ]]; then
-        log_warn "Ignoring --only-index because --chage-model requires full setup."
+        log_warn "Ignoring --only-index because --change-model requires full setup."
         ONLY_INDEX=false
     fi
     log_info "\$(t change_model_requested)"
+    log_warn "ATENÇÃO/WARNING: trocar o modelo exige zerar o ChromaDB e reindexar todos os projetos."
+    if [[ -t 0 ]]; then
+        if ! ask_yes_no_loop "Confirmar reset do ChromaDB e nova indexação? \$YES_NO_HINT "; then
+            log_info "Operação cancelada pelo usuário."
+            exit 0
+        fi
+    else
+        log_warn "Sem terminal interativo: seguindo com reset total por --change-model."
+    fi
+    export MCP_FORCE_MODEL_RECONFIG=1
     REINSTALL=true
     reset_rag_environment
 fi
@@ -573,6 +596,33 @@ prompt_optional_hf_token() {
     fi
 }
 
+run_indexer_with_diagnostics() {
+    local target_project_dir="\$1"
+    local indexer_status=0
+
+    local tokenizers_parallelism="\${TOKENIZERS_PARALLELISM:-false}"
+    local force_model_reconfig="\${MCP_FORCE_MODEL_RECONFIG:-0}"
+
+    set +e
+    TOKENIZERS_PARALLELISM="\${tokenizers_parallelism}" \
+    MCP_FORCE_MODEL_RECONFIG="\${force_model_reconfig}" \
+    "\${VENV_PYTHON}" "\${EXTRACT_DIR}/indexer_full.py" "\${target_project_dir}"
+    indexer_status=\$?
+    set -e
+
+    if [[ "\$indexer_status" -eq 137 ]]; then
+        log_error "\$(t index_oom_title)"
+        log_error "\$(t index_oom_reason)"
+        log_error "\$(t index_oom_hw_recommend)"
+        log_error "\$(t index_oom_next_1)"
+        log_error "\$(t index_oom_next_2)"
+    elif [[ "\$indexer_status" -ne 0 ]]; then
+        log_error "\$(t index_failed_code) \${indexer_status}"
+    fi
+
+    return "\$indexer_status"
+}
+
 # ---------------------------------------------------------------------------
 # Modo --only-index
 # ---------------------------------------------------------------------------
@@ -588,7 +638,7 @@ if [[ "\$ONLY_INDEX" == "true" ]]; then
     fi
     prompt_optional_hf_token
     log_info "\$(t indexing) \${PROJECT_DIR}"
-    "\${VENV_PYTHON}" "\${EXTRACT_DIR}/indexer_full.py" "\${PROJECT_DIR}"
+    run_indexer_with_diagnostics "\${PROJECT_DIR}"
     log_info "\$(t indexing_done)"
     exit 0
 fi
@@ -676,7 +726,7 @@ mkdir -p "\${BIN_DIR}"
 NEEDS_INSTALL=true
 MCP_WAS_OUTDATED=false
 if [[ -f "\${MCP_SERVER_DEST}" ]]; then
-    if cmp -s <(tail -n +2 "\${MCP_SERVER_DEST}") "\${EXTRACT_DIR}/mcp_server.py"; then
+    if cmp -s <(tail -n +2 "\${MCP_SERVER_DEST}") <(tail -n +2 "\${EXTRACT_DIR}/mcp_server.py"); then
         log_info "\$(t mcp_keep)"
     else
         MCP_WAS_OUTDATED=true
@@ -781,10 +831,82 @@ fi
 if [[ "\${#TARGET_CONFIGS[@]}" -eq 0 ]]; then
     log_info "\$(t no_default_cfg)"
 else
+    PENDING_CONFIGS=()
+    PENDING_LABELS=()
+
+    for i in "\${!TARGET_CONFIGS[@]}"; do
+        CFG_PATH="\${TARGET_CONFIGS[\$i]}"
+        CFG_LABEL="\${TARGET_LABELS[\$i]}"
+        CHECK_RESULT=\$(
+            python3 - "\${CFG_PATH}" "\${MCP_SERVER_DEST}" "\${MCP_VERSION}" <<'PYEOF'
+import json
+import sys
+from pathlib import Path
+
+cfg_path = Path(sys.argv[1]).expanduser()
+mcp_server_command = sys.argv[2]
+mcp_version = sys.argv[3]
+
+try:
+    data = json.loads(cfg_path.read_text(encoding="utf-8"))
+except Exception:
+    print("needs_update")
+    sys.exit(0)
+
+if not isinstance(data, dict):
+    print("needs_update")
+    sys.exit(0)
+
+mcp_servers = data.get("mcpServers")
+if mcp_servers is None:
+    mcp_servers = {}
+if not isinstance(mcp_servers, dict):
+    print("needs_update")
+    sys.exit(0)
+
+desired = {
+    "command": mcp_server_command,
+    "args": [],
+    "env": {
+        "CHROMA_HOST": "localhost",
+        "CHROMA_PORT": "8000",
+        "TOKENIZERS_PARALLELISM": "false",
+    },
+    "version": mcp_version,
+}
+
+def is_rag_server_entry(value: object) -> bool:
+    if not isinstance(value, dict):
+        return False
+    cmd = value.get("command")
+    return isinstance(cmd, str) and "mcp-rag-server" in cmd
+
+if "rag-codebase" in mcp_servers and mcp_servers["rag-codebase"] == desired:
+    print("already_up_to_date")
+    sys.exit(0)
+
+for key, value in mcp_servers.items():
+    if key != "rag-codebase" and is_rag_server_entry(value):
+        print("needs_update")
+        sys.exit(0)
+
+print("needs_update")
+PYEOF
+        )
+
+        if [[ "\${CHECK_RESULT}" != "already_up_to_date" ]]; then
+            PENDING_CONFIGS+=("\${CFG_PATH}")
+            PENDING_LABELS+=("\${CFG_LABEL}")
+        fi
+    done
+
+    if [[ "\${#PENDING_CONFIGS[@]}" -eq 0 ]]; then
+        log_info "\$(t mcp_cfg_all_current)"
+    else
     echo ""
     log_info "\$(t detected_cfg_files)"
-    for i in "\${!TARGET_CONFIGS[@]}"; do
-        echo -e "  - \${TARGET_LABELS[\$i]}: \${TARGET_CONFIGS[\$i]}"
+    for i in "\${!PENDING_CONFIGS[@]}"; do
+        echo -e "  - \${PENDING_LABELS[\$i]}: \${PENDING_CONFIGS[\$i]}"
     done
 
     APPLY_MCP_CONFIG=false
@@ -800,9 +922,9 @@ else
     fi
 
     if [[ "\$APPLY_MCP_CONFIG" == "true" ]]; then
-        for i in "\${!TARGET_CONFIGS[@]}"; do
-            CFG_PATH="\${TARGET_CONFIGS[\$i]}"
-            CFG_LABEL="\${TARGET_LABELS[\$i]}"
+        for i in "\${!PENDING_CONFIGS[@]}"; do
+            CFG_PATH="\${PENDING_CONFIGS[\$i]}"
+            CFG_LABEL="\${PENDING_LABELS[\$i]}"
 
             if ! RESULT=\$(
                 python3 - "\${CFG_PATH}" "\${MCP_SERVER_DEST}" "\${MCP_VERSION}" <<'PYEOF'
@@ -837,6 +959,7 @@ desired = {
     "env": {
         "CHROMA_HOST": "localhost",
         "CHROMA_PORT": "8000",
+        "TOKENIZERS_PARALLELISM": "false",
     },
     "version": mcp_version,
 }
@@ -903,6 +1026,7 @@ PYEOF
     else
         log_info "\$(t user_skipped_cfg)"
     fi
+    fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -914,7 +1038,7 @@ if [[ "\$SKIP_INDEX" == "false" ]]; then
     else
         log_section "\$(t section_index_project) \${PROJECT_DIR}"
         prompt_optional_hf_token
-        "\${VENV_PYTHON}" "\${EXTRACT_DIR}/indexer_full.py" "\${PROJECT_DIR}"
+        run_indexer_with_diagnostics "\${PROJECT_DIR}"
     fi
 else
     log_section "\$(t section_skip_index)"

@@ -12,5 +12,8 @@ langchain-text-splitters>=0.2.0
 # Barra de progresso visual no terminal
 tqdm>=4.66.0
 
+# Monitor de memória em tempo real durante indexação
+psutil>=5.9.0
+
 # SDK oficial do MCP (Model Context Protocol) da Anthropic
 mcp>=1.0.0
