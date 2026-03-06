@@ -212,7 +212,7 @@ echo -e "${BOLD}Adicione em 'mcpServers' no arquivo ${YELLOW}${CLAUDE_JSON}${NC}
 echo ""
 cat << 'EOF'
     "rag-codebase": {
-      "command": "/home/jocsa/.local/bin/mcp-rag-server",
+      "command": "~/.local/bin/mcp-rag-server",
       "args": [],
       "env": {
         "CHROMA_HOST": "localhost",

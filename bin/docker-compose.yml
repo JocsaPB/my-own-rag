@@ -6,7 +6,7 @@ services:
       - "8000:8000"
     volumes:
       # Persiste o banco diretamente na pasta do usuário no host
-      - /home/jocsa/.rag_db:/chroma/chroma
+      - ${HOME}/.rag_db:/chroma/chroma
     environment:
       # Habilita autenticação anônima (sem token) para uso local
       - ANONYMIZED_TELEMETRY=false

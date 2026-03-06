@@ -51,16 +51,24 @@ Add to `~/.claude.json` inside `"mcpServers"`:
 
 ```json
 "rag-codebase": {
-  "command": "/home/jocsa/.local/bin/mcp-rag-server",
+  "command": "~/.local/bin/mcp-rag-server",
   "args": [],
   "env": {
     "CHROMA_HOST": "localhost",
-    "CHROMA_PORT": "8000"
+    "CHROMA_PORT": "8000",
+    "MCP_MODEL_DIR": "<PROJECT_ROOT>/model"
   }
 }
 ```
 
 Restart Claude Code CLI to load the server.
+
+### Model download + fallback (Hugging Face -> local `model/`)
+
+On startup, `mcp-rag-server` now:
+1. Tries to download/update `BAAI/bge-m3` from Hugging Face API.
+2. Saves/updates the files in `model/` (or path from `MCP_MODEL_DIR`).
+3. If Hugging Face is unavailable, it loads the model from local `model/` as fallback.
 
 ## Available MCP tools
 
@@ -79,8 +87,52 @@ Restart Claude Code CLI to load the server.
 ./chroma_monitor.sh watch     # real-time chunks
 ./chroma_monitor.sh disk      # disk size
 ./chroma_monitor.sh logs      # HTTP logs from container
+./chroma_monitor.sh mcp-logs  # real-time MCP usage logs (actor + tool + status)
+./chroma_monitor.sh mcp-summary # aggregated MCP usage (top tools/actors, 24h)
 ./chroma_monitor.sh full      # full dashboard
 ```
+
+### MCP usage telemetry
+
+`mcp-rag-server` now writes structured usage logs to:
+
+```bash
+~/.rag_db/mcp_usage.log
+```
+
+Each entry includes:
+- timestamp
+- actor (who accessed)
+- MCP tool used
+- event (`tool_call_start` / `tool_call_end`)
+- status and details (when available)
+- client process metadata
+
+This helps validate whether MCP is effectively used by tools.
+
+## Restart `mcp-rag-server`
+
+After changing `bin/mcp_server.py`, restart the server so changes take effect.
+
+1. Stop current process(es):
+
+```bash
+pgrep -f "$HOME/.rag_venv/bin/python3 $HOME/.local/bin/mcp-rag-server" | xargs -r kill
+```
+
+2. Start it again in background:
+
+```bash
+nohup "$HOME/.local/bin/mcp-rag-server" >/tmp/mcp-rag-server.out 2>/tmp/mcp-rag-server.err < /dev/null &
+```
+
+3. Verify:
+
+```bash
+ps -ef | rg "mcp-rag-server|bin/mcp_server.py"
+```
+
+If you use Claude Code CLI as the MCP host, restarting the CLI also reloads the server process.
 
 ## Rebuild the installer
 

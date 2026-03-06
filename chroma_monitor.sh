@@ -8,6 +8,8 @@
 #   ./chroma_monitor.sh watch    # monitora chunks em tempo real (loop)
 #   ./chroma_monitor.sh disk     # tamanho do banco no disco (watch)
 #   ./chroma_monitor.sh logs     # logs em tempo real do container Docker
+#   ./chroma_monitor.sh mcp-logs # logs de uso das ferramentas MCP
+#   ./chroma_monitor.sh mcp-summary # resumo agregado de uso MCP (24h + geral)
 #   ./chroma_monitor.sh full     # painel completo: chunks + disco + detalhes
 # =============================================================================
 set -euo pipefail
@@ -29,6 +31,7 @@ VENV_DIR="${HOME}/.rag_venv"
 VENV_PYTHON="${VENV_DIR}/bin/python3"
 VENV_PIP="${VENV_DIR}/bin/pip"
 CONTAINER_NAME="chromadb-rag"
+MCP_USAGE_LOG="${MCP_USAGE_LOG:-${HOME}/.rag_db/mcp_usage.log}"
 REFRESH_INTERVAL=5
 
 # ---------------------------------------------------------------------------
@@ -268,7 +271,169 @@ cmd_logs() {
 }
 
 # ---------------------------------------------------------------------------
-# Modo 5: full — painel completo
+# Modo 5: mcp-logs — logs de uso do MCP (quem acessa + ferramenta)
+# ---------------------------------------------------------------------------
+cmd_mcp_logs() {
+    ensure_venv
+
+    if [[ ! -f "$MCP_USAGE_LOG" ]]; then
+        echo -e "${YELLOW}[!]${NC} Arquivo de log MCP não encontrado: ${MCP_USAGE_LOG}"
+        echo -e "    O arquivo será criado automaticamente quando o MCP Server receber chamadas."
+        echo -e "    Reinicie/atualize o mcp-rag-server e use alguma ferramenta MCP."
+        exit 1
+    fi
+
+    echo -e "${DIM}  Exibindo uso MCP em tempo real (Ctrl+C para sair)${NC}"
+    echo -e "${DIM}  Fonte: ${MCP_USAGE_LOG}${NC}"
+    echo ""
+
+    # Formata JSONL em linhas legíveis:
+    # [timestamp] actor=<ator> tool=<ferramenta> event=<start/end> status=<status> client=<processo>
+    tail -n 50 -f "$MCP_USAGE_LOG" | while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        "${VENV_PYTHON}" - "$line" <<'PYEOF'
+import json
+import sys
+
+raw = sys.argv[1]
+try:
+    data = json.loads(raw)
+except Exception:
+    print(raw)
+    sys.exit(0)
+
+ts = data.get("timestamp", "-")
+actor = data.get("actor", "-")
+tool = data.get("tool", "-")
+event = data.get("event", "-")
+client = data.get("client_process", "-")
+details = data.get("details", {}) or {}
+status = details.get("status", "-")
+
+print(f"[{ts}] actor={actor} tool={tool} event={event} status={status} client={client}")
+PYEOF
+    done
+}
+
+# ---------------------------------------------------------------------------
+# Modo 6: mcp-summary — visão agregada de uso do MCP
+# ---------------------------------------------------------------------------
+cmd_mcp_summary() {
+    ensure_venv
+
+    if [[ ! -f "$MCP_USAGE_LOG" ]]; then
+        echo -e "${YELLOW}[!]${NC} Arquivo de log MCP não encontrado: ${MCP_USAGE_LOG}"
+        echo -e "    O arquivo será criado automaticamente quando o MCP Server receber chamadas."
+        exit 1
+    fi
+
+    "${VENV_PYTHON}" - "$MCP_USAGE_LOG" <<'PYEOF'
+import json
+import sys
+from collections import Counter
+from datetime import datetime, timedelta, timezone
+
+path = sys.argv[1]
+now = datetime.now(timezone.utc)
+window_24h = now - timedelta(hours=24)
+
+total_events = 0
+total_calls_end = 0
+ok_calls = 0
+error_calls = 0
+
+tools_all = Counter()
+actors_all = Counter()
+tools_24h = Counter()
+actors_24h = Counter()
+status_24h = Counter()
+
+def parse_ts(raw: str):
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+with open(path, "r", encoding="utf-8") as f:
+    for line in f:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            item = json.loads(line)
+        except Exception:
+            continue
+
+        total_events += 1
+        tool = item.get("tool", "-")
+        actor = item.get("actor", "-")
+        event = item.get("event", "-")
+        details = item.get("details", {}) or {}
+        status = details.get("status", "-")
+        ts = parse_ts(item.get("timestamp", ""))
+
+        if event == "tool_call_end":
+            total_calls_end += 1
+            if status == "ok":
+                ok_calls += 1
+            elif status == "error":
+                error_calls += 1
+            tools_all[tool] += 1
+            actors_all[actor] += 1
+
+            if ts and ts >= window_24h:
+                tools_24h[tool] += 1
+                actors_24h[actor] += 1
+                status_24h[status] += 1
+
+print("Resumo de uso MCP")
+print("-" * 72)
+print(f"Arquivo de log: {path}")
+print(f"Eventos totais (start/end): {total_events}")
+print(f"Chamadas finalizadas (tool_call_end): {total_calls_end}")
+print(f"Status finalizadas: ok={ok_calls} | error={error_calls}")
+print()
+
+print("Top ferramentas (geral)")
+if tools_all:
+    for name, count in tools_all.most_common(10):
+        print(f"  - {name}: {count}")
+else:
+    print("  - sem dados")
+print()
+
+print("Top atores (geral)")
+if actors_all:
+    for name, count in actors_all.most_common(10):
+        print(f"  - {name}: {count}")
+else:
+    print("  - sem dados")
+print()
+
+print("Ultimas 24h")
+print(f"  - total finalizadas: {sum(tools_24h.values())}")
+print(f"  - status: {dict(status_24h) if status_24h else {'sem_dados': 0}}")
+
+print("  - top ferramentas (24h)")
+if tools_24h:
+    for name, count in tools_24h.most_common(10):
+        print(f"    * {name}: {count}")
+else:
+    print("    * sem dados")
+
+print("  - top atores (24h)")
+if actors_24h:
+    for name, count in actors_24h.most_common(10):
+        print(f"    * {name}: {count}")
+else:
+    print("    * sem dados")
+PYEOF
+}
+
+# ---------------------------------------------------------------------------
+# Modo 7: full — painel completo
 # ---------------------------------------------------------------------------
 cmd_full() {
     ensure_venv
@@ -374,7 +539,9 @@ cmd_menu() {
     echo -e "  ${CYAN}[2]${NC} Monitorar chunks em tempo real ${DIM}(atualiza a cada ${REFRESH_INTERVAL}s)${NC}"
     echo -e "  ${CYAN}[3]${NC} Monitorar tamanho no disco     ${DIM}(watch no ~/.rag_db)${NC}"
     echo -e "  ${CYAN}[4]${NC} Ver logs do Docker             ${DIM}(requisições HTTP ao ChromaDB)${NC}"
-    echo -e "  ${CYAN}[5]${NC} Painel completo                ${DIM}(tudo junto, atualiza automático)${NC}"
+    echo -e "  ${CYAN}[5]${NC} Ver logs de uso MCP            ${DIM}(quem acessa + ferramenta usada)${NC}"
+    echo -e "  ${CYAN}[6]${NC} Resumo de uso MCP              ${DIM}(top ferramentas/atores e 24h)${NC}"
+    echo -e "  ${CYAN}[7]${NC} Painel completo                ${DIM}(tudo junto, atualiza automático)${NC}"
     echo ""
     echo -e "  ${CYAN}[0]${NC} Sair"
     echo ""
@@ -385,7 +552,9 @@ cmd_menu() {
         2) echo ""; cmd_watch ;;
         3) cmd_disk ;;
         4) cmd_logs ;;
-        5) cmd_full ;;
+        5) cmd_mcp_logs ;;
+        6) cmd_mcp_summary ;;
+        7) cmd_full ;;
         0) exit 0 ;;
         *) echo -e "\n  ${YELLOW}Opção inválida.${NC}"; sleep 1; cmd_menu ;;
     esac
@@ -399,11 +568,13 @@ case "${1:-menu}" in
     watch)   cmd_watch  ;;
     disk)    cmd_disk   ;;
     logs)    cmd_logs   ;;
+    mcp-logs) cmd_mcp_logs ;;
+    mcp-summary) cmd_mcp_summary ;;
     full)    cmd_full   ;;
     menu)    cmd_menu   ;;
     *)
         echo -e "${RED}[ERRO]${NC} Modo desconhecido: '$1'"
-        echo "Uso: $0 [chunks|watch|disk|logs|full]"
+        echo "Uso: $0 [chunks|watch|disk|logs|mcp-logs|mcp-summary|full]"
         exit 1
         ;;
 esac

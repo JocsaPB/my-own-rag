@@ -310,7 +310,7 @@ else
     echo ""
     cat << 'MCP_CONFIG_EOF'
     "rag-codebase": {
-      "command": "/home/jocsa/.local/bin/mcp-rag-server",
+      "command": "~/.local/bin/mcp-rag-server",
       "args": [],
       "env": {
         "CHROMA_HOST": "localhost",

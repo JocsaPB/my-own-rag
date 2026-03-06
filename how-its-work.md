@@ -227,7 +227,7 @@ Cada chunk armazenado tem:
 | `id` | string | `MD5("src/auth.py::chunk::0")` |
 | `embedding` | float[1024] | `[0.04, -0.21, ...]` |
 | `document` | string | `"def login(user, pwd):\n    ..."` |
-| `file_path` | metadata | `/home/jocsa/projeto/src/auth.py` |
+| `file_path` | metadata | `/home/<usuario>/projeto/src/auth.py` |
 | `chunk_index` | metadata | `0` |
 | `file_name` | metadata | `auth.py` |
 | `relative_path` | metadata | `src/auth.py` |

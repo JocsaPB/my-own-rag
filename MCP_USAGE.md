@@ -9,7 +9,7 @@ O servidor MCP já deve estar configurado em `~/.claude.json`. Se não estiver:
 ```json
 "mcpServers": {
   "rag-codebase": {
-    "command": "/home/jocsa/.local/bin/mcp-rag-server",
+    "command": "~/.local/bin/mcp-rag-server",
     "args": [],
     "env": {
       "CHROMA_HOST": "localhost",
@@ -48,7 +48,7 @@ semantic_search_code("integração com banco de dados", top_k=10)
 ```
 # Resultados para: 'função que valida email'
 
-## [1] /home/jocsa/projeto/src/validators.py
+## [1] /home/<usuario>/projeto/src/validators.py
 **Similaridade:** 92.3%
 
 ```
@@ -75,15 +75,15 @@ Após editar um arquivo, use isto para manter o índice RAG sincronizado.
 **Exemplos:**
 
 ```
-update_file_index("/home/jocsa/projeto/src/auth.py")
+update_file_index("/home/<usuario>/projeto/src/auth.py")
 update_file_index("src/validators.py")
-update_file_index("/home/jocsa/environment/my-custom-rag-python/bin/mcp_server.py")
+update_file_index("<PROJECT_ROOT>/bin/mcp_server.py")
 ```
 
 **Resultado:**
 ```
 Arquivo reindexado com sucesso.
-  Arquivo  : /home/jocsa/projeto/src/auth.py
+  Arquivo  : /home/<usuario>/projeto/src/auth.py
   Chunks antigos removidos: 5
   Novos chunks inseridos  : 6
 ```
@@ -107,7 +107,7 @@ Remove um arquivo completamente do banco de dados vetorial.
 **Exemplos:**
 
 ```
-delete_file_index("/home/jocsa/projeto/src/old_module.py")
+delete_file_index("/home/<usuario>/projeto/src/old_module.py")
 delete_file_index("temp/debug.py")
 ```
 
@@ -127,14 +127,14 @@ Indexa ou reindexar todos os arquivos de um diretório.
 **Exemplos:**
 
 ```
-index_specific_folder("/home/jocsa/projeto/src")
+index_specific_folder("/home/<usuario>/projeto/src")
 index_specific_folder("./src/auth")
 ```
 
 **Resultado:**
 ```
 Indexação da pasta concluída.
-  Pasta    : /home/jocsa/projeto/src
+  Pasta    : /home/<usuario>/projeto/src
   Arquivos processados: 12/12
   Total de chunks     : 145
 ```
@@ -219,7 +219,7 @@ Cada resultado de busca inclui:
 docker ps | grep chromadb
 
 # Se não estiver, inicie
-docker-compose -f ~/.rag_venv/docker-compose.yml up -d
+docker compose -f "$HOME/docker-chromadb/docker-compose.yml" up -d
 ```
 
 ### "Nenhum resultado encontrado"
